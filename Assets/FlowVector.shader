@@ -109,30 +109,37 @@ Shader "Instanced/FlowVector"
             // unity_ObjectToWorld = mul(R, unity_ObjectToWorld);
 
 
-            float s = flowvec > 0 ? length(flowvec) : 0.01;
-			unity_ObjectToWorld._m00_m10_m20 *= s;
-			unity_ObjectToWorld._m01_m11_m21 *= s;
-			unity_ObjectToWorld._m02_m12_m22 *= s;
+            // Third rotation approach
+            // https://forum.unity.com/threads/rotate-mesh-inside-shader.1109660/
+            float3 forward = B;
+			float3 right = normalize(cross(forward, A));
+			float3 up = cross(right, forward); // does not need to be normalized
+			float3x3 rmat = float3x3(right, up, forward);
+            float4x4 tmat = 0.0;
+			tmat._m00_m10_m20 = right;
+			tmat._m01_m11_m21 = up;
+			tmat._m02_m12_m22 = forward;
+            tmat._m33 = 1.0;
+			 
+            unity_ObjectToWorld = mul(tmat, unity_ObjectToWorld);
+
+            // scaling
+            float s = clamp(0.01f, 1.0f, length(flowvec));
 			unity_ObjectToWorld._m00_m10_m20 *= s;
 			unity_ObjectToWorld._m01_m11_m21 *= s;
 			unity_ObjectToWorld._m02_m12_m22 *= s;
 
-            // scaling
-            //float4x4 scale = 0.0;
-            //scale._m00_m11_m22_m33 = float4(s,s,s,1);
-            //scale = mul(unity_WorldToObject, scale);
-            //unity_ObjectToWorld = mul(scale, unity_ObjectToWorld);
         #endif
         }
 
         void surf (Input IN, inout SurfaceOutputStandard o)
         {
 			#ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
-				float3 strength = length(flowVectorBuffer[unity_InstanceID]);
+				float3 strength = length(flowVectorBuffer[unity_InstanceID]) / 10;
             #else
                 float3 strength = 0.5f;
 			#endif
-            o.Albedo = lerp(_ColorMin, _ColorMax, saturate(strength - 0.3f));
+            o.Albedo = lerp(_ColorMin, _ColorMax, saturate(strength - 0.5f));
             o.Alpha = 0.01f;
         }
         ENDCG
