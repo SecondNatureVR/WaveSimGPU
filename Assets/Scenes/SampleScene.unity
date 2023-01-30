@@ -155,7 +155,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   flowFieldCS: {fileID: 7200000, guid: 9920dfdfda1411544bc4e3a42b7b7163, type: 3}
   instancedMaterial: {fileID: 2100000, guid: 01e0f14974bd0dd47968aedc6174e8eb, type: 2}
-  mesh: {fileID: 2534964839176971238, guid: ea40591f1936f7341998f2b18b496f85, type: 3}
+  mesh: {fileID: -7929139438592967118, guid: 68435589d27985143a52c97ea52dabfc, type: 3}
 --- !u!65 &538867674
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -175,7 +175,7 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 10, y: 10, z: 10}
+  m_Size: {x: 20, y: 20, z: 20}
   m_Center: {x: 0, y: 0, z: 0}
 --- !u!4 &538867675
 Transform:

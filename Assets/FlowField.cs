@@ -26,7 +26,7 @@ public class FlowField : MonoBehaviour
         Vector3[] vectors = new Vector3[flowBufferSize];
         for (int i = 0; i < flowBufferSize; i++)
         {
-            vectors[i] = Random.onUnitSphere;
+            vectors[i] = new Vector3(0.01f, 0, 1f) * Random.Range(.5f, .8f);
         }
         flowVectorBuffer.SetData(vectors);
 
