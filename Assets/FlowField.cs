@@ -12,8 +12,9 @@ public class FlowField : MonoBehaviour
     private Vector3Int dimensions;
     private int flowBufferSize;
     private ComputeBuffer flowVectorBuffer;
-    private ComputeBuffer positionBuffer;
     private ComputeBuffer argsBuffer;
+    private RenderParams renderParams;
+
     // Start is called before the first frame update
     void Start()
     {
@@ -24,7 +25,6 @@ public class FlowField : MonoBehaviour
         // create buffers for vectors 
         flowBufferSize = dimensions.x * dimensions.y * dimensions.z;
 
-        positionBuffer = new ComputeBuffer(flowBufferSize, stride);
 
         stride = System.Runtime.InteropServices.Marshal.SizeOf(typeof(Matrix4x4));
         flowVectorBuffer = new ComputeBuffer(flowBufferSize, stride);
@@ -55,38 +55,28 @@ public class FlowField : MonoBehaviour
                 }
             }
         }
-        positionBuffer.SetData(positions);
         flowVectorBuffer.SetData(vectors);
 
-
-        // Create args buffer
-		uint[] args = new uint[5];
-		args[0] = (uint)mesh.GetIndexCount(0);
-		args[1] = (uint)flowBufferSize;
-		args[2] = (uint)mesh.GetIndexStart(0);
-		args[3] = (uint)mesh.GetBaseVertex(0);
-		args[4] = 0; // offset
-
-		argsBuffer = new ComputeBuffer(1, 5 * sizeof(uint), ComputeBufferType.IndirectArguments);
-		argsBuffer.SetData(args);
-
-        instancedMaterial.SetBuffer("positionBuffer", positionBuffer);
         instancedMaterial.SetBuffer("flowVectorBuffer", flowVectorBuffer);
+
+        renderParams = new RenderParams(instancedMaterial);
+        renderParams.worldBounds = bounds;
     }
 
     private void Update()
     {
         // Dispatch update flowfield
-        Graphics.DrawMeshInstancedIndirect(mesh, 0, instancedMaterial, GetComponent<Collider>().bounds, argsBuffer); 
+        Graphics.RenderMeshPrimitives(renderParams, mesh, 0, flowBufferSize); 
     }
 
     private void OnDisable()
     {
-        positionBuffer.Release();
-        positionBuffer = null;
         flowVectorBuffer.Release();
         flowVectorBuffer = null;
-        argsBuffer.Release();
-        argsBuffer = null;
+    }
+
+    private void OnDestroy()
+    {
+        flowVectorBuffer.Release();
     }
 }
