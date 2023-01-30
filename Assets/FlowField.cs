@@ -41,11 +41,16 @@ public class FlowField : MonoBehaviour
                 for (int z = 0; z < dimensions.z; z++)
                 {
                     Vector3 pos = bounds.min + new Vector3(x, y, z) + new Vector3(0.5f, 0.5f, 0.5f);
-                    Vector3 flow = z > bounds.extents.z ? bounds.center - pos : pos;
                     positions[index] = pos;
+                    Vector3 flow = pos;
+                    float scaling = flow.magnitude / bounds.extents.magnitude;
+                    if (z > bounds.extents.z)
+                    {
+                        flow = bounds.center - pos;
+                        scaling = 1 - scaling;
+                    }
                     Quaternion rot = Quaternion.FromToRotation(Vector3.up, flow.normalized);
-                    Vector3 scaling = Vector3.ClampMagnitude(Vector3.one * flow.magnitude, 1.2f);
-                    vectors[index] = Matrix4x4.TRS(pos, rot, scaling);
+                    vectors[index] = Matrix4x4.TRS(pos, rot, Vector3.one * Mathf.Pow(scaling, 2));
                     index++;
                 }
             }

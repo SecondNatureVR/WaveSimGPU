@@ -55,13 +55,13 @@ Shader "Instanced/FlowVector"
         {
 			#ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
                  // TODO: extract scaling from TRS matrix
-                //float s = length(flowVectorBuffer[unity_InstanceID]._m00_m01_m01);
+                float3 pos = flowVectorBuffer[unity_InstanceID]._m03_m13_m23;
 				//float strength = length(s); 
-                float strength = (flowVectorBuffer[unity_InstanceID]._m23 + 1) / 10;
+                float strength = length(pos) / 10;
             #else
                 float strength = 0.5f;
 			#endif
-            o.Albedo = lerp(_ColorMin, _ColorMax, strength);
+            o.Albedo = lerp(_ColorMin, _ColorMax, 1 - strength);
             o.Alpha = 0.01f;
         }
         ENDCG
