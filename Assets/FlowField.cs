@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 public class FlowField : MonoBehaviour
 {
@@ -11,8 +12,8 @@ public class FlowField : MonoBehaviour
     private Vector3Int dimensions;
     private int flowBufferSize;
     private ComputeBuffer flowVectorBuffer;
-    private ComputeBuffer argsBuffer;
     private ComputeBuffer positionBuffer;
+    private ComputeBuffer argsBuffer;
     // Start is called before the first frame update
     void Start()
     {
@@ -23,11 +24,15 @@ public class FlowField : MonoBehaviour
         // create buffers for vectors 
         flowBufferSize = dimensions.x * dimensions.y * dimensions.z;
 
-        flowVectorBuffer = new ComputeBuffer(flowBufferSize, stride);
         positionBuffer = new ComputeBuffer(flowBufferSize, stride);
 
+        stride = System.Runtime.InteropServices.Marshal.SizeOf(typeof(Matrix4x4));
+        flowVectorBuffer = new ComputeBuffer(flowBufferSize, stride);
         Vector3[] positions = new Vector3[flowBufferSize];
-        Vector3[] vectors = new Vector3[flowBufferSize];
+
+        // Compute transformation matrices
+        // https://forum.unity.com/threads/rotate-mesh-inside-shader.1109660/
+        Matrix4x4[] vectors = new Matrix4x4[flowBufferSize];
         int index = 0;
         for (int x = 0; x < dimensions.x; x++)
         {
@@ -35,8 +40,12 @@ public class FlowField : MonoBehaviour
             {
                 for (int z = 0; z < dimensions.z; z++)
                 {
-                    positions[index] = bounds.min + new Vector3(x, y, z) + new Vector3(0.5f, 0.5f, 0.5f);
-                    vectors[index] = z > 0 ? positions[index] - bounds.center : bounds.center - positions[index];
+                    Vector3 pos = bounds.min + new Vector3(x, y, z) + new Vector3(0.5f, 0.5f, 0.5f);
+                    Vector3 flow = z > bounds.extents.z ? bounds.center - pos : pos;
+                    positions[index] = pos;
+                    Quaternion rot = Quaternion.FromToRotation(Vector3.up, flow.normalized);
+                    Vector3 scaling = Vector3.ClampMagnitude(Vector3.one * flow.magnitude, 1.2f);
+                    vectors[index] = Matrix4x4.TRS(pos, rot, scaling);
                     index++;
                 }
             }
