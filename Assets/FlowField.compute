@@ -1,14 +1,32 @@
 // Each #kernel tells which function to compile; you can have many kernels
-#pragma kernel CSMain
+#pragma kernel UpdateTransforms
 
-// Create a RenderTexture with enableRandomWrite flag and set it
-// with cs.SetTexture
-RWTexture2D<float4> Result;
-
-[numthreads(8,8,1)]
-void CSMain (uint3 id : SV_DispatchThreadID)
+struct FlowVector
 {
-    // TODO: insert actual code here!
+    float4x4 transform;
+    float magnitude;
+};
+RWStructuredBuffer<FlowVector> flowVectors;
+float _decay;
+float _deltaTime;
 
-    Result[id.xy] = float4(id.x & id.y, (id.x & 15)/15.0, (id.y & 15)/15.0, 0.0);
+float3 _SpherePos;
+float3 _SphereVelocity;
+float _SphereRadius;
+
+[numthreads(64,1,1)]
+void UpdateTransforms (uint3 id : SV_DispatchThreadID)
+{
+    FlowVector flow = flowVectors[id.x];
+    float m = flow.magnitude;
+    flowVectors[id.x].magnitude = max(0, m + _decay * _deltaTime);
+
+    float3 pos = flow.transform._m03_m13_m23;
+    if (distance(pos, _SpherePos) < _SphereRadius) {
+        if (length(_SphereVelocity) > m)
+        {
+            flowVectors[id.x].magnitude = clamp(0.2, 1, length(_SphereVelocity));
+            float4x4 tmat = flowVectors[id.x].transform;
+        }
+    }
 }

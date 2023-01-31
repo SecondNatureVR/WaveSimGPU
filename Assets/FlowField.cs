@@ -1,14 +1,12 @@
-using System.Collections;
-using System.Collections.Generic;
-using Unity.VisualScripting;
 using UnityEngine;
-using UnityEngine.UIElements;
 
 public class FlowField : MonoBehaviour
 {
     [SerializeField] private ComputeShader flowFieldCS;
     [SerializeField] public Material instancedMaterial;
+    [SerializeField] public float decay = -0.1f;
     [SerializeField] private Mesh mesh;
+    [SerializeField] public Rigidbody Sphere;
     private Bounds bounds;
     private Vector3Int dimensions;
     private int flowBufferSize;
@@ -18,7 +16,6 @@ public class FlowField : MonoBehaviour
     struct FlowVector
     {
         // position is implied by indexing into buffer
-        public Matrix4x4 rotation;
         public Matrix4x4 transform;
         public float magnitude;
     }
@@ -50,32 +47,34 @@ public class FlowField : MonoBehaviour
         {
             Vector3 pos = GetPosition(i);
             Vector3 flow = bounds.center - pos;
-            if (pos.z < bounds.center.z)
-            {
-                flow = pos - bounds.center;
-            }
             Quaternion rot = Quaternion.FromToRotation(Vector3.up, flow.normalized);
             FlowVector v = new FlowVector();
-            v.rotation = Matrix4x4.Rotate(rot);
             v.transform = Matrix4x4.TRS(pos, rot, Vector3.one);
-            v.magnitude = Mathf.InverseLerp(1, bounds.extents.magnitude, flow.magnitude);
+            v.magnitude = flow.magnitude / bounds.extents.magnitude; 
             vectors[index] = v;
             index++;
         }
         flowVectors.SetData(vectors);
+        flowFieldCS.SetBuffer(0, "flowVectors", flowVectors);
 
         instancedMaterial.SetBuffer("flowVectors", flowVectors);
         instancedMaterial.SetVector("BOUNDS_MIN", bounds.min);
         instancedMaterial.SetInt("WIDTH", dimensions.x);
         instancedMaterial.SetInt("HEIGHT", dimensions.y);
         instancedMaterial.SetInt("DEPTH", dimensions.z);
-
         renderParams = new RenderParams(instancedMaterial);
         renderParams.worldBounds = bounds;
     }
 
     private void Update()
     {
+        flowFieldCS.SetFloat("_deltaTime", Time.deltaTime);
+        flowFieldCS.SetFloat("_decay", decay);
+        flowFieldCS.SetVector("_SpherePos", Sphere.position);
+        flowFieldCS.SetVector("_SphereVelocity", Sphere.velocity);
+        flowFieldCS.SetFloat("_SphereRadius", Sphere.GetComponent<SphereCollider>().radius);
+        flowFieldCS.Dispatch(0, flowBufferSize/64, 1, 1);
+
         // Dispatch update flowfield
         Graphics.RenderMeshPrimitives(renderParams, mesh, 0, flowBufferSize); 
     }
@@ -88,6 +87,6 @@ public class FlowField : MonoBehaviour
 
     private void OnDestroy()
     {
-        flowVectors.Release();
+        flowVectors.Dispose();
     }
 }
