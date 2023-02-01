@@ -6,6 +6,7 @@ Shader "Instanced/FlowVector"
         _HeightMagnitudes("_HeightMagnitudes", 3D) = "white" {}
         _ColorMin ("ColorMin", Color) = (0,0,1,1)
         _ColorMax ("ColorMax", Color) = (1,0,0,1)
+        _UV_Offset ("Offset", float) = (0, 0, 0)
     }
     SubShader
     {
@@ -29,34 +30,48 @@ Shader "Instanced/FlowVector"
         };
 
         fixed4 _ColorMin, _ColorMax;
-        float3 BOUNDS_MIN, BOUNDS_EXTENTS;
+        float4 _UV_Offset;
+        float3 BOUNDS_MIN, BOUNDS_EXTENTS, BOUNDS_SIZE;
         uint WIDTH, HEIGHT, DEPTH;
+        float3 TEXEL_SIZE;
+        uint3 TEX_DIMENSIONS;
 
         UNITY_DECLARE_TEX3D_NOSAMPLER(_NormalDirections);
         UNITY_DECLARE_TEX3D_NOSAMPLER(_HeightMagnitudes);
-	    SamplerState my_linear_repeat_sampler;
+        float4 _NormalDirections_TexelSize;
+	    SamplerState SmpClampTrilinear;
 
 		uint3 GetCoord(int index) {
-			uint z = index % DEPTH;
-			uint y = (index / DEPTH) % HEIGHT;
-			uint x = index / (HEIGHT * DEPTH);
+			uint z = index % TEX_DIMENSIONS.z;
+			uint y = (index / TEX_DIMENSIONS.z) % TEX_DIMENSIONS.y;
+			uint x = index / (TEX_DIMENSIONS.y * TEX_DIMENSIONS.z);
             return uint3(x, y, z);
         }
 
-        float3 GetPosition(int index) {
+        float4 GetIndexUV(int index) {
             uint3 coord = GetCoord(index);
-			return BOUNDS_MIN + coord + float3(1,1,1) * .5;
-		}
-
-        float4 GetUV(int index) {
-            float3 coord = GetCoord(index);
             return float4(
-                coord.x / WIDTH,
-                coord.y / HEIGHT,
-                coord.z / DEPTH,
-                1
-            );
+		  	  coord.x * TEXEL_SIZE.x,
+		  	  coord.y * TEXEL_SIZE.y,
+		  	  coord.z * TEXEL_SIZE.z,
+		      1
+		    );
         }
+
+        float4 GetWorldUV(int index) {
+            float3 uv = GetIndexUV(index).xyz;
+            // Moves UV into center of texel in world space
+            return float4(uv + TEXEL_SIZE * 0.5 + _UV_Offset, 1);
+        }
+
+        float3 GetWorldPosition(int index) {
+            float3 uv = GetWorldUV(index).xyz;
+			return BOUNDS_MIN + float3(
+                 uv.x * BOUNDS_SIZE.x,
+                 uv.y * BOUNDS_SIZE.y,
+                 uv.z * BOUNDS_SIZE.z
+		    );
+		}
 
         float4x4 SetRotationToDirection(float3 direction, inout float4x4 tmat) {
             // set new rotation toward velocity
@@ -83,24 +98,20 @@ Shader "Instanced/FlowVector"
 		}
 
         float4x4 SetScaleFromMagnitude(float magnitude, inout float4x4 tmat) {
-			float s = min(1.0, magnitude * magnitude);
+			float s = magnitude * magnitude;
 			float4x4 scale = 0.0;
 			scale._m00_m11_m22_m33 = float4(s,s,s,1.0);
             return mul(tmat, scale);
-        }
-
-        float3 UnpackNormal(float3 packedNormal) {
-            return (packedNormal * 2.0) - float3(1,1,1);
         }
 
         void setup() {
 		#ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
 		#ifdef SHADER_API_D3D11
 
-			float3 pos = GetPosition(unity_InstanceID);
-			float4 uv = GetUV(unity_InstanceID);
-			float3 direction = UnpackNormal(_NormalDirections.SampleLevel(my_linear_repeat_sampler, uv, 0, 0.0));
-			float magnitude = _HeightMagnitudes.SampleLevel(my_linear_repeat_sampler, uv, 0, 0.0).x;
+			float3 pos = GetWorldPosition(unity_InstanceID);
+			float4 uv = GetWorldUV(unity_InstanceID);
+			float3 direction = _NormalDirections.SampleLevel(SmpClampTrilinear, uv, 0, 0.0).rgb * 2 - 1;
+			float magnitude = _HeightMagnitudes.SampleLevel(SmpClampTrilinear, uv, 0, 0.0).x;
 
 			float4x4 tmat = {
 				1, 0, 0,  pos.x,
@@ -126,8 +137,8 @@ Shader "Instanced/FlowVector"
 			float strength = 0.5f;
 			#ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
 			#ifdef SHADER_API_D3D11
-                float4 uv = GetUV(unity_InstanceID);
-                strength = _HeightMagnitudes.SampleLevel(my_linear_repeat_sampler, uv, 0.0, 0).x;
+                float4 uv = GetWorldUV(unity_InstanceID);
+                strength = _HeightMagnitudes.SampleLevel(SmpClampTrilinear, uv, 0.0, 0).x;
 			#endif
 			#endif
             o.Albedo = lerp(_ColorMin, _ColorMax, strength);

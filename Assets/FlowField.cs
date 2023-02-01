@@ -1,8 +1,10 @@
 using System.Linq;
+using TMPro.EditorUtilities;
 using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 
+[ExecuteInEditMode]
 public class FlowField : MonoBehaviour
 {
     [SerializeField] private ComputeShader flowFieldCS;
@@ -13,7 +15,6 @@ public class FlowField : MonoBehaviour
     private Bounds bounds;
     private Vector3Int dimensions;
     private int flowBufferSize;
-    private ComputeBuffer flowVectors;
     private RenderParams renderParams;
 
 
@@ -33,7 +34,7 @@ public class FlowField : MonoBehaviour
         int z = index % dimensions.z;
         int y = (index / dimensions.z) % dimensions.y;
         int x = index / (dimensions.y * dimensions.z);
-        return bounds.min + new Vector3(x, y, z) + Vector3.one * 0.5f;
+        return bounds.min + new Vector3(x, y, z);
     }
 
     // Start is called before the first frame update
@@ -46,7 +47,6 @@ public class FlowField : MonoBehaviour
         flowBufferSize = dimensions.x * dimensions.y * dimensions.z;
 
         int stride = System.Runtime.InteropServices.Marshal.SizeOf(typeof(FlowVector));
-        flowVectors = new ComputeBuffer(flowBufferSize, stride);
 
         // Compute transformation matrices
         // https://forum.unity.com/threads/rotate-mesh-inside-shader.1109660/
@@ -64,19 +64,19 @@ public class FlowField : MonoBehaviour
             vectors[index] = v;
             index++;
         }
-        flowVectors.SetData(vectors);
-        flowFieldCS.SetBuffer(0, "flowVectors", flowVectors);
 
         Init3DTextures(vectors);
 
-        instancedMaterial.SetBuffer("flowVectors", flowVectors);
         instancedMaterial.SetVector("BOUNDS_MIN", bounds.min);
         instancedMaterial.SetVector("BOUNDS_EXTENTS", bounds.extents);
+        instancedMaterial.SetVector("BOUNDS_SIZE", bounds.size);
         instancedMaterial.SetInt("WIDTH", dimensions.x);
         instancedMaterial.SetInt("HEIGHT", dimensions.y);
         instancedMaterial.SetInt("DEPTH", dimensions.z);
         instancedMaterial.SetTexture("_NormalDirections", directionTex);
         instancedMaterial.SetTexture("_HeightMagnitudes", magnitudeTex);
+        instancedMaterial.SetVector("TEXEL_SIZE", new Vector3(1.0f / directionTex.width, 1.0f / directionTex.height, 1.0f / directionTex.depth));
+        instancedMaterial.SetVector("TEX_DIMENSIONS", new Vector3(directionTex.width, directionTex.height, directionTex.depth));
         renderParams = new RenderParams(instancedMaterial);
         renderParams.worldBounds = bounds;
     }
@@ -86,9 +86,16 @@ public class FlowField : MonoBehaviour
         directionTex = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.RGB24, false, true);
         directionTex.filterMode = FilterMode.Bilinear;
         directionTex.wrapMode = TextureWrapMode.Repeat;
-        directionTex.SetPixels(vectors.Select(v => v.direction).Select(p => new Color(p.x, p.y, p.z)).ToArray());
+        directionTex.SetPixels(vectors.Select(v => (v.direction + Vector3.one) * 0.5f).Select(p => new Color(p.x, p.y, p.z)).ToArray());
         directionTex.Apply();
 
+        var dirs = vectors.Select(v => v.direction).ToArray();
+        var packed = dirs.Select(d => (d + Vector3.one) * 0.5f).ToArray();
+        var allPacked = packed.SelectMany(p => new float[] { p.x, p.y, p.z }).Any(f => f > 1 || f < 0);
+        var cols = packed.Select(p => new Color(p.x, p.y, p.z)).ToArray();
+        var unpack = cols.Select(c => new Vector3(c.r, c.g, c.b)).Select(v => v * 2 - Vector3.one).ToArray();
+        var allNorm = unpack.Any(v => v.magnitude > 1);
+        var mmag = unpack.Select(v => v.magnitude).Max();
         Debug.Log($"directionTex.graphicsFormat={directionTex.graphicsFormat}");
 
 
@@ -112,11 +119,5 @@ public class FlowField : MonoBehaviour
 
         // Dispatch update flowfield
         Graphics.RenderMeshPrimitives(renderParams, mesh, 0, flowBufferSize); 
-    }
-
-    private void OnDestroy()
-    {
-        flowVectors.Release();
-        flowVectors = null;
     }
 }
