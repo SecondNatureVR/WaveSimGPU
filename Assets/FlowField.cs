@@ -56,11 +56,15 @@ public class FlowField : MonoBehaviour
         {
             Vector3 pos = GetPosition(i);
             Vector3 flow = bounds.center - pos;
+            if (pos.x > 0)
+                flow = pos;
             Quaternion rot = Quaternion.FromToRotation(Vector3.up, flow.normalized);
             FlowVector v = new FlowVector();
             v.transform = Matrix4x4.TRS(pos, rot, Vector3.one);
             v.direction = flow.normalized;
             v.magnitude = (flow.magnitude / bounds.extents.magnitude);
+            if (pos.x > 0)
+                v.magnitude = 1 - v.magnitude;
             vectors[index] = v;
             index++;
         }

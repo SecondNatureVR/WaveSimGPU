@@ -7,6 +7,10 @@ Shader "Instanced/FlowVector"
         _ColorMin ("ColorMin", Color) = (0,0,1,1)
         _ColorMax ("ColorMax", Color) = (1,0,0,1)
         _UV_Offset ("Offset", float) = (0, 0, 0)
+        _SmoothMin ("SmoothMin", float) = 0
+        _SmoothMax ("SmoothMax", float) = 0
+        _MagScale ("MagScale", float) = 1
+        [MaterialToggle] _FlipMag ("FlipMagnitude", float) = 0
     }
     SubShader
     {
@@ -29,6 +33,9 @@ Shader "Instanced/FlowVector"
             float magnitude;
         };
 
+        float _MagScale;
+        bool _FlipMag;
+        float _SmoothMin, _SmoothMax;
         fixed4 _ColorMin, _ColorMax;
         float4 _UV_Offset;
         float3 BOUNDS_MIN, BOUNDS_EXTENTS, BOUNDS_SIZE;
@@ -39,7 +46,12 @@ Shader "Instanced/FlowVector"
         UNITY_DECLARE_TEX3D_NOSAMPLER(_NormalDirections);
         UNITY_DECLARE_TEX3D_NOSAMPLER(_HeightMagnitudes);
         float4 _NormalDirections_TexelSize;
-	    SamplerState SmpClampTrilinear;
+	    SamplerState SmpClampPoint;
+
+        #define TSAMP SmpClampPoint
+        #define FLOW_SAMPLE(texture3D, uv) texture3D.SampleLevel(TSAMP, uv, 0.0, 0)
+        #define FLOW_SAMPLE_DIRECTION(uv) FLOW_SAMPLE(_NormalDirections, uv)
+        #define FLOW_SAMPLE_MAGNITUDE(uv) FLOW_SAMPLE(_HeightMagnitudes, uv)
 
 		uint3 GetCoord(int index) {
 			uint z = index % TEX_DIMENSIONS.z;
@@ -98,7 +110,8 @@ Shader "Instanced/FlowVector"
 		}
 
         float4x4 SetScaleFromMagnitude(float magnitude, inout float4x4 tmat) {
-			float s = magnitude * magnitude;
+			//float s = magnitude * magnitude * magnitude;
+            float s = smoothstep(_SmoothMin, _SmoothMax, magnitude*magnitude);
 			float4x4 scale = 0.0;
 			scale._m00_m11_m22_m33 = float4(s,s,s,1.0);
             return mul(tmat, scale);
@@ -110,8 +123,13 @@ Shader "Instanced/FlowVector"
 
 			float3 pos = GetWorldPosition(unity_InstanceID);
 			float4 uv = GetWorldUV(unity_InstanceID);
-			float3 direction = _NormalDirections.SampleLevel(SmpClampTrilinear, uv, 0, 0.0).rgb * 2 - 1;
-			float magnitude = _HeightMagnitudes.SampleLevel(SmpClampTrilinear, uv, 0, 0.0).x;
+			float3 direction = FLOW_SAMPLE_DIRECTION(uv).rgb * 2 - 1;
+			float magnitude = FLOW_SAMPLE_MAGNITUDE(uv).x;
+
+            magnitude *= _MagScale;
+
+            if (_FlipMag)
+                magnitude = 1 - magnitude;
 
 			float4x4 tmat = {
 				1, 0, 0,  pos.x,
@@ -138,7 +156,7 @@ Shader "Instanced/FlowVector"
 			#ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
 			#ifdef SHADER_API_D3D11
                 float4 uv = GetWorldUV(unity_InstanceID);
-                strength = _HeightMagnitudes.SampleLevel(SmpClampTrilinear, uv, 0.0, 0).x;
+                strength = FLOW_SAMPLE_MAGNITUDE(uv);
 			#endif
 			#endif
             o.Albedo = lerp(_ColorMin, _ColorMax, strength);
