@@ -6,11 +6,11 @@ Shader "Instanced/FlowVector"
         _HeightMagnitudes("_HeightMagnitudes", 3D) = "white" {}
         _ColorMin ("ColorMin", Color) = (0,0,1,1)
         _ColorMax ("ColorMax", Color) = (1,0,0,1)
-        _UV_Offset ("Offset", float) = (0, 0, 0)
         _SmoothMin ("SmoothMin", float) = 0
         _SmoothMax ("SmoothMax", float) = 0
         _MagScale ("MagScale", float) = 1
         [MaterialToggle] _FlipMag ("FlipMagnitude", float) = 0
+        [MaterialToggle] _DrawDebug ("DrawDebug", float) = 0
     }
     SubShader
     {
@@ -28,17 +28,22 @@ Shader "Instanced/FlowVector"
 		#include "UnityLightingCommon.cginc"
 		#include "AutoLight.cginc"
 
+        // Ronja tutorials
+        // https://www.ronja-tutorials.com/post/047-invlerp_remap/
+	    #include "Interpolation.cginc"
+
         struct FlowVector {
             float4x4 transform;
             float magnitude;
         };
 
         float _MagScale;
-        bool _FlipMag;
+        bool _FlipMag, _DrawDebug;
         float _SmoothMin, _SmoothMax;
         fixed4 _ColorMin, _ColorMax;
-        float4 _UV_Offset;
+        float4 _UV_Offset, _UV_Scale;
         float3 BOUNDS_MIN, BOUNDS_EXTENTS, BOUNDS_SIZE;
+        float3 DRAWBOX_MIN, DRAWBOX_EXTENTS, DRAWBOX_SIZE;
         uint WIDTH, HEIGHT, DEPTH;
         float3 TEXEL_SIZE;
         uint3 TEX_DIMENSIONS;
@@ -71,9 +76,30 @@ Shader "Instanced/FlowVector"
         }
 
         float4 GetWorldUV(int index) {
-            float3 uv = GetIndexUV(index).xyz;
-            // Moves UV into center of texel in world space
-            return float4(uv + TEXEL_SIZE * 0.5 + _UV_Offset, 1);
+			float3 uv = GetIndexUV(index).xyz;
+			// Moves UV into center of texel in world space
+			uv = uv + TEXEL_SIZE * 0.5 + _UV_Offset;
+			uv = float3(
+				uv.x * _UV_Scale.x,
+				uv.y * _UV_Scale.y,
+				uv.z * _UV_Scale.z
+			);
+            // remap uvs into drawbox
+            if (_DrawDebug) {
+                float3 toDbox = float3(
+					DRAWBOX_SIZE.x / BOUNDS_SIZE.x,
+					DRAWBOX_SIZE.y / BOUNDS_SIZE.y,
+					DRAWBOX_SIZE.z / BOUNDS_SIZE.z
+                );
+                float3 worldOffset = DRAWBOX_MIN - BOUNDS_MIN;
+                uv = float3(uv.x * toDbox.x, uv.y * toDbox.y, uv.z * toDbox.z);
+                uv += float3(
+                    worldOffset.x / BOUNDS_SIZE.x,
+                    worldOffset.y / BOUNDS_SIZE.y,
+                    worldOffset.z / BOUNDS_SIZE.z
+                );
+			}
+            return float4(uv, 1);
         }
 
         float3 GetWorldPosition(int index) {
@@ -112,6 +138,10 @@ Shader "Instanced/FlowVector"
         float4x4 SetScaleFromMagnitude(float magnitude, inout float4x4 tmat) {
 			//float s = magnitude * magnitude * magnitude;
             float s = smoothstep(_SmoothMin, _SmoothMax, magnitude*magnitude);
+            if (_DrawDebug) {
+                s *= min(DRAWBOX_SIZE.x, min(DRAWBOX_SIZE.y, DRAWBOX_SIZE.z))
+                   / max(BOUNDS_SIZE.x, max(BOUNDS_SIZE.y, BOUNDS_SIZE.z));
+            }
 			float4x4 scale = 0.0;
 			scale._m00_m11_m22_m33 = float4(s,s,s,1.0);
             return mul(tmat, scale);
@@ -123,7 +153,7 @@ Shader "Instanced/FlowVector"
 
 			float3 pos = GetWorldPosition(unity_InstanceID);
 			float4 uv = GetWorldUV(unity_InstanceID);
-			float3 direction = FLOW_SAMPLE_DIRECTION(uv).rgb * 2 - 1;
+			float3 direction = FLOW_SAMPLE_DIRECTION(uv).rgb * 2.0 - 1.0;
 			float magnitude = FLOW_SAMPLE_MAGNITUDE(uv).x;
 
             magnitude *= _MagScale;

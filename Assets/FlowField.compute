@@ -1,12 +1,10 @@
 // Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel UpdateTransforms
 
-struct FlowVector
-{
-    float4x4 transform;
-    float magnitude;
-};
-RWStructuredBuffer<FlowVector> flowVectors;
+
+RWTexture3D<snorm float3> _NormalDirections;
+RWTexture3D<float> _HeightMagnitudes;
+
 float _decay;
 float _deltaTime;
 
@@ -14,11 +12,58 @@ float3 _SpherePos;
 float3 _SphereVelocity;
 float _SphereRadius;
 
+float4 _NormalDirections_TexelSize;
+SamplerState SmpClampPoint;
+
+#define TSAMP SmpClampPoint
+#define FLOW_SAMPLE(texture3D, uv) texture3D.SampleLevel(TSAMP, uv, 0.0, 0)
+#define FLOW_SAMPLE_DIRECTION(uv) FLOW_SAMPLE(_NormalDirections, uv)
+#define FLOW_SAMPLE_MAGNITUDE(uv) FLOW_SAMPLE(_HeightMagnitudes, uv)
+
+float3 _UV_Offset;
+float3 BOUNDS_MIN, BOUNDS_EXTENTS, BOUNDS_SIZE;
+uint WIDTH, HEIGHT, DEPTH;
+float3 TEXEL_SIZE;
+uint3 TEX_DIMENSIONS;
+
+uint3 GetCoord(int index) {
+    uint z = index % TEX_DIMENSIONS.z;
+    uint y = (index / TEX_DIMENSIONS.z) % TEX_DIMENSIONS.y;
+    uint x = index / (TEX_DIMENSIONS.y * TEX_DIMENSIONS.z);
+    return uint3(x, y, z);
+}
+
+float4 GetIndexUV(int index) {
+    uint3 coord = GetCoord(index);
+    return float4(
+      coord.x * TEXEL_SIZE.x,
+      coord.y * TEXEL_SIZE.y,
+      coord.z * TEXEL_SIZE.z,
+      1
+    );
+}
+
+float4 GetWorldUV(int index) {
+    float3 uv = GetIndexUV(index).xyz;
+    // Moves UV into center of texel in world space
+    return float4(uv + TEXEL_SIZE * 0.5 + _UV_Offset, 1);
+}
+
+float3 GetWorldPosition(int index) {
+    float3 uv = GetWorldUV(index).xyz;
+    return BOUNDS_MIN + float3(
+         uv.x * BOUNDS_SIZE.x,
+         uv.y * BOUNDS_SIZE.y,
+         uv.z * BOUNDS_SIZE.z
+    );
+}
+
 [numthreads(64,1,1)]
 void UpdateTransforms (uint3 id : SV_DispatchThreadID)
 {
-    FlowVector flow = flowVectors[id.x];
-    float m = flow.magnitude;
+    uint3 coord = GetCoord(id.x);
+    float3 uv = GetWorldUV(id.x);
+    float m = FLOW_SAMPLE_MAGNITUDE(uv);
     flowVectors[id.x].magnitude = max(0, m + _decay * _deltaTime);
 
     float3 pos = flow.transform._m03_m13_m23;

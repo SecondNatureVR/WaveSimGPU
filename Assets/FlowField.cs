@@ -17,6 +17,11 @@ public class FlowField : MonoBehaviour
     private int flowBufferSize;
     private RenderParams renderParams;
 
+    private Vector3 TEXEL_SIZE;
+    private Vector3 TEX_DIMENSIONS;
+    [SerializeField] public Vector3 _UV_Offset = Vector3.zero;
+    [SerializeField] public Vector3 _UV_Scale = Vector3.one;
+
 
     // normal map for velocity
     private Texture3D directionTex;
@@ -40,6 +45,18 @@ public class FlowField : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
+        Debug.Log(
+            $"SystemInfo.IsFormatSupported(GraphicsFormat.R8G8B8_SNorm, FormatUsage.Linear)=" +
+            $"{SystemInfo.IsFormatSupported(GraphicsFormat.R8G8B8_SNorm, FormatUsage.Linear)}"
+        );
+        Debug.Log(
+            $"SystemInfo.IsFormatSupported(GraphicsFormat.R8G8B8_SNorm, FormatUsage.Sample)=" +
+            $"{SystemInfo.IsFormatSupported(GraphicsFormat.R8G8B8_SNorm, FormatUsage.Sample)}"
+        );
+        Debug.Log(
+            $"SystemInfo.IsFormatSupported(GraphicsFormat.R8G8B8_SNorm, FormatUsage.SetPixels)=" +
+            $"{SystemInfo.IsFormatSupported(GraphicsFormat.R8G8B8_SNorm, FormatUsage.SetPixels)}"
+        );
         bounds = GetComponent<Collider>().bounds;
         dimensions = Vector3Int.RoundToInt(bounds.size);
 
@@ -56,33 +73,44 @@ public class FlowField : MonoBehaviour
         {
             Vector3 pos = GetPosition(i);
             Vector3 flow = bounds.center - pos;
-            if (pos.x > 0)
-                flow = pos;
             Quaternion rot = Quaternion.FromToRotation(Vector3.up, flow.normalized);
             FlowVector v = new FlowVector();
             v.transform = Matrix4x4.TRS(pos, rot, Vector3.one);
             v.direction = flow.normalized;
             v.magnitude = (flow.magnitude / bounds.extents.magnitude);
-            if (pos.x > 0)
-                v.magnitude = 1 - v.magnitude;
             vectors[index] = v;
             index++;
         }
 
         Init3DTextures(vectors);
 
+        instancedMaterial.SetTexture("_NormalDirections", directionTex);
+        instancedMaterial.SetTexture("_HeightMagnitudes", magnitudeTex);
         instancedMaterial.SetVector("BOUNDS_MIN", bounds.min);
         instancedMaterial.SetVector("BOUNDS_EXTENTS", bounds.extents);
         instancedMaterial.SetVector("BOUNDS_SIZE", bounds.size);
         instancedMaterial.SetInt("WIDTH", dimensions.x);
         instancedMaterial.SetInt("HEIGHT", dimensions.y);
         instancedMaterial.SetInt("DEPTH", dimensions.z);
-        instancedMaterial.SetTexture("_NormalDirections", directionTex);
-        instancedMaterial.SetTexture("_HeightMagnitudes", magnitudeTex);
-        instancedMaterial.SetVector("TEXEL_SIZE", new Vector3(1.0f / directionTex.width, 1.0f / directionTex.height, 1.0f / directionTex.depth));
-        instancedMaterial.SetVector("TEX_DIMENSIONS", new Vector3(directionTex.width, directionTex.height, directionTex.depth));
+        instancedMaterial.SetVector("TEXEL_SIZE", TEXEL_SIZE);
+        instancedMaterial.SetVector("TEX_DIMENSIONS", TEX_DIMENSIONS);
+        instancedMaterial.SetVector("_UV_Offset", _UV_Offset);
+        instancedMaterial.SetVector("_UV_Scale", _UV_Scale);
         renderParams = new RenderParams(instancedMaterial);
         renderParams.worldBounds = bounds;
+
+        flowFieldCS.SetTexture(0, "_NormalDirections", directionTex);
+        flowFieldCS.SetTexture(0, "_HeightMagnitudes", magnitudeTex);
+        flowFieldCS.SetVector("BOUNDS_MIN", bounds.min);
+        flowFieldCS.SetVector("BOUNDS_EXTENTS", bounds.extents);
+        flowFieldCS.SetVector("BOUNDS_SIZE", bounds.size);
+        flowFieldCS.SetInt("WIDTH", dimensions.x);
+        flowFieldCS.SetInt("HEIGHT", dimensions.y);
+        flowFieldCS.SetInt("DEPTH", dimensions.z);
+        flowFieldCS.SetVector("TEXEL_SIZE", TEXEL_SIZE);
+        flowFieldCS.SetVector("TEX_DIMENSIONS", TEX_DIMENSIONS);
+        flowFieldCS.SetVector("_UV_Offset", _UV_Offset);
+        flowFieldCS.SetVector("_UV_Scale", _UV_Scale);
     }
 
     private void Init3DTextures(FlowVector[] vectors)
@@ -92,6 +120,9 @@ public class FlowField : MonoBehaviour
         directionTex.wrapMode = TextureWrapMode.Repeat;
         directionTex.SetPixels(vectors.Select(v => (v.direction + Vector3.one) * 0.5f).Select(p => new Color(p.x, p.y, p.z)).ToArray());
         directionTex.Apply();
+
+        TEXEL_SIZE = new Vector3(1.0f / directionTex.width, 1.0f / directionTex.height, 1.0f / directionTex.depth);
+        TEX_DIMENSIONS = new Vector3(directionTex.width, directionTex.height, directionTex.depth);
 
         var dirs = vectors.Select(v => v.direction).ToArray();
         var packed = dirs.Select(d => (d + Vector3.one) * 0.5f).ToArray();
@@ -114,6 +145,8 @@ public class FlowField : MonoBehaviour
 
     private void Update()
     {
+        instancedMaterial.SetVector("_UV_Offset", _UV_Offset);
+        instancedMaterial.SetVector("_UV_Scale", _UV_Scale);
         flowFieldCS.SetFloat("_deltaTime", Time.deltaTime);
         flowFieldCS.SetFloat("_decay", decay);
         flowFieldCS.SetVector("_SpherePos", Sphere.position);
@@ -123,5 +156,11 @@ public class FlowField : MonoBehaviour
 
         // Dispatch update flowfield
         Graphics.RenderMeshPrimitives(renderParams, mesh, 0, flowBufferSize); 
+    }
+
+    private void OnDisable()
+    {
+        DestroyImmediate(directionTex);
+        DestroyImmediate(magnitudeTex);
     }
 }

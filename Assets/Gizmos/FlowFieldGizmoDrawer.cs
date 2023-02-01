@@ -5,7 +5,7 @@ public class FlowFieldGizmoDrawer
 {
   [DrawGizmo (GizmoType.Selected | GizmoType.NonSelected)]
   static void DrawGizmoForFlowField(FlowField flowField, GizmoType gizmoType) {
-    Gizmos.color = Color.green;
+    Gizmos.color = Color.red;
     Bounds b = flowField.GetComponent<Collider>().bounds;
     Gizmos.DrawWireCube(b.center, b.size);
   }
