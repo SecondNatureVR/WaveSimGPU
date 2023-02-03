@@ -37,15 +37,19 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _Velocity:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
     - _DrawDebug: 1
     - _FlipMag: 0
     - _Glossiness: 0.5
-    - _MagScale: 2.69
+    - _MagScale: 1
     - _Metallic: 0
-    - _SmoothMax: 0.29
-    - _SmoothMin: -0.29
+    - _SmoothMax: 1
+    - _SmoothMin: 0
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
     - _ColorMax: {r: 1, g: 0, b: 0, a: 1}

@@ -35,6 +35,7 @@ Shader "Instanced/FlowVector"
         struct FlowVector {
             float4x4 transform;
             float magnitude;
+            float3 velocity;
         };
 
         float _MagScale;
@@ -50,6 +51,7 @@ Shader "Instanced/FlowVector"
 
         UNITY_DECLARE_TEX3D_NOSAMPLER(_NormalDirections);
         UNITY_DECLARE_TEX3D_NOSAMPLER(_HeightMagnitudes);
+        UNITY_DECLARE_TEX3D_NOSAMPLER(_Velocity);
         float4 _NormalDirections_TexelSize;
 	    SamplerState SmpClampPoint;
 
@@ -57,6 +59,7 @@ Shader "Instanced/FlowVector"
         #define FLOW_SAMPLE(texture3D, uv) texture3D.SampleLevel(TSAMP, uv, 0.0, 0)
         #define FLOW_SAMPLE_DIRECTION(uv) FLOW_SAMPLE(_NormalDirections, uv)
         #define FLOW_SAMPLE_MAGNITUDE(uv) FLOW_SAMPLE(_HeightMagnitudes, uv)
+        #define FLOW_SAMPLE_VELOCITY(uv) FLOW_SAMPLE(_Velocity, uv)
 
 		uint3 GetCoord(int index) {
 			uint z = index % TEX_DIMENSIONS.z;
@@ -153,8 +156,11 @@ Shader "Instanced/FlowVector"
 
 			float3 pos = GetWorldPosition(unity_InstanceID);
 			float4 uv = GetWorldUV(unity_InstanceID);
-			float3 direction = FLOW_SAMPLE_DIRECTION(uv).rgb * 2.0 - 1.0;
+            float3 velocity = FLOW_SAMPLE_VELOCITY(uv);
+			float3 direction = FLOW_SAMPLE_DIRECTION(uv).rgb * 2 - 1;
 			float magnitude = FLOW_SAMPLE_MAGNITUDE(uv).x;
+			//float3 direction = normalize(velocity)
+			//float magnitude = length(velocity);
 
             magnitude *= _MagScale;
 
