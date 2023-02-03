@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
@@ -14,8 +15,8 @@ public class FlowField : MonoBehaviour
     [SerializeField] public Rigidbody Sphere;
     [SerializeField] public GameObject DEBUG_ARROW;
     [SerializeField] public Texture3D initMagnitudeTex;
-    // TODO: saving the current encoding creates a ARGB8 instead of ARGB32 asset... why??
-    //[SerializeField] public Texture3D initDirectionTex;
+    [SerializeField] public Texture3D initDirectionTex;
+
     private Bounds bounds;
     private Vector3Int dimensions;
     private int flowBufferSize;
@@ -26,14 +27,7 @@ public class FlowField : MonoBehaviour
     [SerializeField] public Vector3 _UV_Offset = Vector3.zero;
     [SerializeField] public Vector3 _UV_Scale = Vector3.one;
     [SerializeField] public float _TimeScale = 3f;
-
-    // normal map for velocity
-    private Texture3D velocityTex;
-
-    // RW Versions
-    // normal map for velocity
-    private Texture3D velocityTexRW;
-
+   
     private DoubleBufferedTexture3D directionDBT;
     private DoubleBufferedTexture3D magnitudeDBT;
 
@@ -41,11 +35,9 @@ public class FlowField : MonoBehaviour
     {
         // position is implied by indexing into buffer
         public Vector3 direction;
-        public Vector3 position;
         public float magnitude;
-        public Vector3 velocity;
-        public Quaternion rotation;
     }
+
     Vector3Int GetCoord(int index) {
         int z = index % TEX_DIMENSIONS.z;
         int y = (index / TEX_DIMENSIONS.z) % TEX_DIMENSIONS.y;
@@ -79,50 +71,20 @@ public class FlowField : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        Debug.Log(
-            $"SystemInfo.IsFormatSupported(GraphicsFormat.R8G8B8_SNorm, FormatUsage.Linear)=" +
-            $"{SystemInfo.IsFormatSupported(GraphicsFormat.R8G8B8_SNorm, FormatUsage.Linear)}"
-        );
-        Debug.Log(
-            $"SystemInfo.IsFormatSupported(GraphicsFormat.R8G8B8_SNorm, FormatUsage.Sample)=" +
-            $"{SystemInfo.IsFormatSupported(GraphicsFormat.R8G8B8_SNorm, FormatUsage.Sample)}"
-        );
-        Debug.Log(
-            $"SystemInfo.IsFormatSupported(GraphicsFormat.R8G8B8_SNorm, FormatUsage.SetPixels)=" +
-            $"{SystemInfo.IsFormatSupported(GraphicsFormat.R8G8B8_SNorm, FormatUsage.SetPixels)}"
-        );
         bounds = GetComponent<Collider>().bounds;
         dimensions = Vector3Int.RoundToInt(bounds.size);
         TEX_DIMENSIONS = dimensions;
         TEXEL_SIZE = new Vector3(1.0f / TEX_DIMENSIONS.x, 1.0f / TEX_DIMENSIONS.y, 1.0f / TEX_DIMENSIONS.z);
 
-        // create buffers for vectors 
-        flowBufferSize = dimensions.x * dimensions.y * dimensions.z;
-
-        // Init values
-        FlowVector[] vectors = new FlowVector[flowBufferSize];
-        int index = 0;
-        for (int i = 0; i < flowBufferSize; i++)
-        {
-            Vector3 pos = GetWorldPosition(i);
-            Vector3 flow = Vector3.zero - pos;
-            FlowVector v = new FlowVector();
-            v.direction = flow.normalized;
-            v.magnitude = (flow.magnitude / bounds.extents.magnitude);
-            vectors[index] = v;
-            index++;
-        }
-
-        Init3DTextures(vectors);
+        Init3DTextures();
+        InitDoubleBuffers();
 
         instancedMaterial.SetTexture("_NormalDirections", directionDBT.readTexture);
         instancedMaterial.SetTexture("_HeightMagnitudes", magnitudeDBT.readTexture);
         Shader.SetGlobalTexture("_NormalDirections", directionDBT.readTexture);
         Shader.SetGlobalTexture("_HeightMagnitudes", magnitudeDBT.readTexture);
-        Shader.SetGlobalTexture("_Velocity", velocityTex);
         Shader.SetGlobalTexture("_NormalDirectionsRW", directionDBT.writeTexture);
         Shader.SetGlobalTexture("_HeightMagnitudesRW", magnitudeDBT.writeTexture);
-        Shader.SetGlobalTexture("_VelocityRW", velocityTexRW);
         Shader.SetGlobalVector("BOUNDS_MIN", bounds.min);
         Shader.SetGlobalVector("BOUNDS_EXTENTS", bounds.extents);
         Shader.SetGlobalVector("BOUNDS_SIZE", bounds.size);
@@ -140,49 +102,52 @@ public class FlowField : MonoBehaviour
         renderParams = new RenderParams(instancedMaterial);
         renderParams.worldBounds = bounds;
     }
-
-    private void Init3DTextures(FlowVector[] vectors)
+    private void Init3DTextures()
     {
-        velocityTex = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.RGBAHalf, false, true);
-        velocityTex.filterMode = FilterMode.Trilinear;
-        velocityTex.wrapMode = TextureWrapMode.Repeat;
-        velocityTex.SetPixelData(vectors.Select(v => v.velocity).ToArray(), 0);
+        // create buffers for vectors 
+        flowBufferSize = dimensions.x * dimensions.y * dimensions.z;
 
-        velocityTexRW = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.RGBAHalf, false, true);
-        velocityTexRW.filterMode = FilterMode.Trilinear;
-        velocityTexRW.wrapMode = TextureWrapMode.Repeat;
-        Graphics.CopyTexture(velocityTex, velocityTexRW);
+        // Init values
+        FlowVector[] vectors = new FlowVector[flowBufferSize];
+        int index = 0;
+        for (int i = 0; i < flowBufferSize; i++)
+        {
+            Vector3 pos = GetWorldPosition(i);
+            FlowVector v = new FlowVector();
+            v.direction = pos.normalized;
+            v.magnitude = Vector3.Distance(pos, Vector3.zero) < 3 ? 1f : 0f;
+            vectors[index++] = v;
+        }
 
-        velocityTex.Apply();
-        velocityTexRW.Apply();
+        if (initDirectionTex == null)
+        {
+            // FlowVector.direction = unit Vector3 w/ component values -1...1
+            var directionTex = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.ARGB32, false, true);
+            directionTex.SetPixels(vectors
+                .Select(v => (v.direction + Vector3.one) * 0.5f)
+                .Select(d => new Color(d.z, d.y, d.x))
+                .ToArray()
+            );
+            directionTex.Apply();
 
-        Debug.Log($"velocityTex.graphicsFormat={velocityTex.graphicsFormat}");
+            AssetDatabase.CreateAsset(directionTex, $"Assets/Resources/directionInitTex.asset");
+            initDirectionTex = directionTex;
+        }
 
-        // FlowVector.direction = unit Vector3 w/ component values -1...1
-        var directionTex = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.ARGB32, false, true);
-        directionTex.filterMode = FilterMode.Point;
-        directionTex.wrapMode = TextureWrapMode.Repeat;
-        directionTex.SetPixelData(vectors
-            .Select(v => (v.direction + Vector3.one) * 0.5f)
-            .SelectMany(d => new byte[] {
-                // d.z.... then d.x....
-                (byte) 255,
-                (byte) (d.z * 255),
-                (byte) (d.y * 255),
-                (byte) (d.x * 255)
-            })
-            .ToArray(),
-            0
-        );
+        if (initMagnitudeTex == null)
+        {
+            var magnitudeTex = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.RFloat, false, true);
+            magnitudeTex.SetPixelData(vectors.Select(v => v.magnitude).ToArray(), 0);
+            magnitudeTex.Apply();
 
-        // FIX: current encoding saves as ARGB8 instead of ARGB32 and imports incorrectly... whyyy?
-        // still need to uncomment this line for init to work...
-        AssetDatabase.CreateAsset(directionTex, $"Assets/Resources/directionInitTex.asset");
-        AssetDatabase.CreateAsset(velocityTex, $"Assets/Resources/velocityInitTex.asset");
-
+            AssetDatabase.CreateAsset(magnitudeTex, $"Assets/Resources/magnitudeInitTex.asset");
+            initMagnitudeTex = magnitudeTex;
+        }
+    }
+    private void InitDoubleBuffers()
+    {
         directionDBT = DoubleBufferedTexture3D.CreateDirection(dimensions.x, dimensions.y, dimensions.z);
-        // directionDBT.Init(initDirectionTex);
-        directionDBT.Init(directionTex);
+        directionDBT.Init(initDirectionTex);
 
         magnitudeDBT = DoubleBufferedTexture3D.CreateMagnitude(dimensions.x, dimensions.y, dimensions.z);
         magnitudeDBT.Init(initMagnitudeTex);
@@ -199,10 +164,10 @@ public class FlowField : MonoBehaviour
         flowFieldCS.SetVector("_SpherePos", Sphere.transform.position);
         flowFieldCS.SetVector("_SphereVelocity", Sphere.velocity);
         flowFieldCS.SetFloat("_SphereRadius", Sphere.GetComponent<SphereCollider>().radius);
-        flowFieldCS.Dispatch(0, flowBufferSize / 64, 1, 1);
+        //flowFieldCS.Dispatch(0, flowBufferSize / 64, 1, 1);
 
-        magnitudeDBT.Swap();
-        directionDBT.Swap();
+        //magnitudeDBT.Swap();
+        //directionDBT.Swap();
 
         //SwapTextureBuffers();
         Graphics.RenderMeshPrimitives(renderParams, mesh, 0, flowBufferSize);
@@ -212,5 +177,11 @@ public class FlowField : MonoBehaviour
     {
         directionDBT.Destroy();
         magnitudeDBT.Destroy();
+    }
+
+    private void OnDestroy()
+    {
+       directionDBT.Destroy();
+       magnitudeDBT.Destroy();
     }
 }

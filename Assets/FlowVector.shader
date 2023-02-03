@@ -156,7 +156,6 @@ Shader "Instanced/FlowVector"
 		}
 
         float4x4 SetScaleFromMagnitude(float magnitude, inout float4x4 tmat) {
-			//float s = magnitude * magnitude * magnitude;
             float s = smoothstep(_SmoothMin, _SmoothMax, magnitude*magnitude);
             if (_DrawDebug) {
                 s *= min(DRAWBOX_SIZE.x, min(DRAWBOX_SIZE.y, DRAWBOX_SIZE.z))
