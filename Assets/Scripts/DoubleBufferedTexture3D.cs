@@ -1,8 +1,6 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
-public class DoubleBufferedTexture3D
+public class DoubleBufferedTexture3D : Object
 {
     public RenderTexture readTexture;
     public RenderTexture writeTexture;
@@ -72,5 +70,11 @@ public class DoubleBufferedTexture3D
         var tmp = readTexture;
         readTexture = writeTexture;
         writeTexture = tmp;
+    }
+
+    public void Destroy()
+    {
+        Destroy(writeTexture);
+        Destroy(readTexture);
     }
 }

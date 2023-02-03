@@ -14,6 +14,8 @@ public class FlowField : MonoBehaviour
     [SerializeField] public Rigidbody Sphere;
     [SerializeField] public GameObject DEBUG_ARROW;
     [SerializeField] public Texture3D initMagnitudeTex;
+    // TODO: saving the current encoding creates a ARGB8 instead of ARGB32 asset... why??
+    //[SerializeField] public Texture3D initDirectionTex;
     private Bounds bounds;
     private Vector3Int dimensions;
     private int flowBufferSize;
@@ -26,15 +28,12 @@ public class FlowField : MonoBehaviour
 
     // normal map for velocity
     private Texture3D velocityTex;
-    // normal map for velocity
-    private Texture3D directionTex;
 
     // RW Versions
     // normal map for velocity
     private Texture3D velocityTexRW;
-    // normal map for velocity
-    private Texture3D directionTexRW;
 
+    private DoubleBufferedTexture3D directionDBT;
     private DoubleBufferedTexture3D magnitudeDBT;
 
     struct FlowVector
@@ -115,12 +114,12 @@ public class FlowField : MonoBehaviour
 
         Init3DTextures(vectors);
 
-        instancedMaterial.SetTexture("_NormalDirections", directionTex);
+        instancedMaterial.SetTexture("_NormalDirections", directionDBT.readTexture);
         instancedMaterial.SetTexture("_HeightMagnitudes", magnitudeDBT.readTexture);
-        Shader.SetGlobalTexture("_NormalDirections", directionTex);
+        Shader.SetGlobalTexture("_NormalDirections", directionDBT.readTexture);
         Shader.SetGlobalTexture("_HeightMagnitudes", magnitudeDBT.readTexture);
         Shader.SetGlobalTexture("_Velocity", velocityTex);
-        Shader.SetGlobalTexture("_NormalDirectionsRW", directionTexRW);
+        Shader.SetGlobalTexture("_NormalDirectionsRW", directionDBT.writeTexture);
         Shader.SetGlobalTexture("_HeightMagnitudesRW", magnitudeDBT.writeTexture);
         Shader.SetGlobalTexture("_VelocityRW", velocityTexRW);
         Shader.SetGlobalVector("BOUNDS_MIN", bounds.min);
@@ -143,8 +142,23 @@ public class FlowField : MonoBehaviour
 
     private void Init3DTextures(FlowVector[] vectors)
     {
+        velocityTex = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.RGBAHalf, false, true);
+        velocityTex.filterMode = FilterMode.Trilinear;
+        velocityTex.wrapMode = TextureWrapMode.Repeat;
+        velocityTex.SetPixelData(vectors.Select(v => v.velocity).ToArray(), 0);
+
+        velocityTexRW = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.RGBAHalf, false, true);
+        velocityTexRW.filterMode = FilterMode.Trilinear;
+        velocityTexRW.wrapMode = TextureWrapMode.Repeat;
+        Graphics.CopyTexture(velocityTex, velocityTexRW);
+
+        velocityTex.Apply();
+        velocityTexRW.Apply();
+
+        Debug.Log($"velocityTex.graphicsFormat={velocityTex.graphicsFormat}");
+
         // FlowVector.direction = unit Vector3 w/ component values -1...1
-        directionTex = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.ARGB32, false, true);
+        var directionTex = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.ARGB32, false, true);
         directionTex.filterMode = FilterMode.Point;
         directionTex.wrapMode = TextureWrapMode.Repeat;
         directionTex.SetPixelData(vectors
@@ -159,37 +173,18 @@ public class FlowField : MonoBehaviour
             .ToArray(),
             0
         );
-        directionTexRW = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.ARGB32, false, true);
-        Debug.Log(SystemInfo.maxTexture3DSize);
-        directionTexRW.filterMode = FilterMode.Point;
-        directionTexRW.wrapMode = TextureWrapMode.Repeat;
-        Graphics.CopyTexture(directionTex, directionTexRW);
 
-        directionTex.Apply();
-        directionTexRW.Apply();
+        // FIX: current encoding saves as ARGB8 instead of ARGB32 and imports incorrectly... whyyy?
+        // still need to uncomment this line for init to work...
+        AssetDatabase.CreateAsset(directionTex, $"Assets/Resources/directionInitTex.asset");
+        AssetDatabase.CreateAsset(velocityTex, $"Assets/Resources/velocityInitTex.asset");
 
+        directionDBT = DoubleBufferedTexture3D.CreateDirection(dimensions.x, dimensions.y, dimensions.z);
+        // directionDBT.Init(initDirectionTex);
+        directionDBT.Init(directionTex);
 
         magnitudeDBT = DoubleBufferedTexture3D.CreateMagnitude(dimensions.x, dimensions.y, dimensions.z);
         magnitudeDBT.Init(initMagnitudeTex);
-
-        velocityTex = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.RGBAHalf, false, true);
-        velocityTex.filterMode = FilterMode.Trilinear;
-        velocityTex.wrapMode = TextureWrapMode.Repeat;
-        velocityTex.SetPixelData(vectors.Select(v => v.velocity).ToArray(), 0);
-
-        velocityTexRW = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.RGBAHalf, false, true);
-        velocityTexRW.filterMode = FilterMode.Trilinear;
-        velocityTexRW.wrapMode = TextureWrapMode.Repeat;
-        Graphics.CopyTexture(velocityTex, velocityTexRW);
-
-        velocityTex.Apply();
-        velocityTexRW.Apply();
-
-        Debug.Log($"directionTex.graphicsFormat={directionTex.graphicsFormat}");
-        Debug.Log($"velocityTex.graphicsFormat={velocityTex.graphicsFormat}");
-
-        AssetDatabase.CreateAsset(directionTex, $"Assets/Resources/directionInitTex.asset");
-        AssetDatabase.CreateAsset(velocityTex, $"Assets/Resources/velocityInitTex.asset");
     }
 
     private void Update()
@@ -212,23 +207,7 @@ public class FlowField : MonoBehaviour
 
     private void OnDisable()
     {
-        Destroy(directionTex);
-        Destroy(velocityTex);
-        Destroy(directionTexRW);
-        Destroy(velocityTexRW);
-        Destroy(magnitudeDBT.readTexture);
-        Destroy(magnitudeDBT.writeTexture);
-    }
-
-    private void SwapTextureBuffers()
-    {
-        Texture3D tmp;
-        tmp = directionTex;
-        directionTex = directionTexRW;
-        directionTexRW = tmp;
-
-        tmp = velocityTex;
-        velocityTex = velocityTexRW;
-        velocityTexRW = tmp;
+        directionDBT.Destroy();
+        magnitudeDBT.Destroy();
     }
 }
