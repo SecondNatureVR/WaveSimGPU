@@ -41,7 +41,6 @@ Shader "Instanced/FlowVector"
         float4 _UV_Offset, _UV_Scale;
         float3 BOUNDS_MIN, BOUNDS_EXTENTS, BOUNDS_SIZE;
         float3 DRAWBOX_MIN, DRAWBOX_EXTENTS, DRAWBOX_SIZE;
-        uint WIDTH, HEIGHT, DEPTH;
         float3 TEXEL_SIZE;
         uint3 TEX_DIMENSIONS;
 
@@ -57,15 +56,15 @@ Shader "Instanced/FlowVector"
         #define FLOW_SAMPLE_MAGNITUDE(uv) FLOW_SAMPLE(_HeightMagnitudes, uv)
         #define FLOW_SAMPLE_VELOCITY(uv) FLOW_SAMPLE(_Velocity, uv)
 
-		uint3 GetCoord(int index) {
+		uint3 GetTexCoord(int index) {
 			uint z = index % TEX_DIMENSIONS.z;
 			uint y = (index / TEX_DIMENSIONS.z) % TEX_DIMENSIONS.y;
 			uint x = index / (TEX_DIMENSIONS.y * TEX_DIMENSIONS.z);
             return uint3(x, y, z);
         }
 
-        float4 GetIndexUV(int index) {
-            uint3 coord = GetCoord(index);
+        float4 GetTexUV(int index) {
+            uint3 coord = GetTexCoord(index);
             return float4(
 		  	  coord.x * TEXEL_SIZE.x,
 		  	  coord.y * TEXEL_SIZE.y,
@@ -75,8 +74,8 @@ Shader "Instanced/FlowVector"
         }
 
         float4 GetWorldUV(int index) {
-			float3 uv = GetIndexUV(index).xyz;
-			// Moves UV into center of texel in world space
+			float3 uv = GetTexUV(index).xyz;
+			// Map UV into center of world space voxel
 			uv = uv + TEXEL_SIZE * 0.5 + _UV_Offset;
 			uv = float3(
 				uv.x * _UV_Scale.x,
@@ -109,6 +108,28 @@ Shader "Instanced/FlowVector"
                  uv.z * BOUNDS_SIZE.z
 		    );
 		}
+
+        float3 invLerp(float3 from, float3 to, float3 value) {
+            return (value - from) / (to - from);
+        }
+
+        // Example: Let the bounding box be divided into texture dimension 3D cells
+        // Where each cell has dimensions WORLD_TEXEL_SIZE
+        // Let c = centroid at the first 3D cell with corner at BOUNDS_MIN
+        // GetTexUVFromWorldPosition(c.worldPos) = (0, 0, 0)
+        // GetTexUVFromWorldPosition(c.worldPos + WORLD_TEXEL_SIZE) = TEXEL_SIZE
+        // GetTexUVFromWorldPosition(BOUNDS_MAX - c.worldPosition) = (1, 1, 1)
+        float3 GetTexUVFromWorldPosition(float3 pos) {
+            float3 WORLD_TEXEL_SIZE = float3(
+                BOUNDS_SIZE.x / TEX_DIMENSIONS.x,
+                BOUNDS_SIZE.y / TEX_DIMENSIONS.y,
+                BOUNDS_SIZE.z / TEX_DIMENSIONS.z
+            );
+            float3 offsetToCenter = WORLD_TEXEL_SIZE * 0.5;
+            float3 fromTexInWorldPos = BOUNDS_MIN + offsetToCenter;
+            float3 toTexInWorldPos = BOUNDS_MIN + BOUNDS_SIZE - offsetToCenter;
+            return invLerp(fromTexInWorldPos, toTexInWorldPos, pos);
+        }
 
         float4x4 SetRotationToDirection(float3 direction, inout float4x4 tmat) {
             // set new rotation toward velocity
@@ -151,12 +172,10 @@ Shader "Instanced/FlowVector"
 		#ifdef SHADER_API_D3D11
 
 			float3 pos = GetWorldPosition(unity_InstanceID);
-			float4 uv = GetWorldUV(unity_InstanceID);
+			float4 uv = float4(GetTexUVFromWorldPosition(pos), 1);
             float3 velocity = FLOW_SAMPLE_VELOCITY(uv);
 			float3 direction = FLOW_SAMPLE_DIRECTION(uv).rgb * 2 - 1;
 			float magnitude = FLOW_SAMPLE_MAGNITUDE(uv).x;
-			//float3 direction = normalize(velocity)
-			//float magnitude = length(velocity);
 
             magnitude *= _MagScale;
 

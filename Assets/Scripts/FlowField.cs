@@ -25,6 +25,7 @@ public class FlowField : MonoBehaviour
     private Vector3Int TEX_DIMENSIONS;
     [SerializeField] public Vector3 _UV_Offset = Vector3.zero;
     [SerializeField] public Vector3 _UV_Scale = Vector3.one;
+    [SerializeField] public float _TimeScale = 3f;
 
     // normal map for velocity
     private Texture3D velocityTex;
@@ -192,14 +193,16 @@ public class FlowField : MonoBehaviour
         Shader.SetGlobalVector("_UV_Offset", _UV_Offset);
         Shader.SetGlobalVector("_UV_Scale", _UV_Scale);
         Shader.SetGlobalFloat("_Time", Time.time);
+        Shader.SetGlobalFloat("_TimeScale", _TimeScale);
         Shader.SetGlobalFloat("_deltaTime", Time.deltaTime);
         flowFieldCS.SetFloat("_decay", decay);
-        flowFieldCS.SetVector("_SpherePos", Sphere.position);
+        flowFieldCS.SetVector("_SpherePos", Sphere.transform.position);
         flowFieldCS.SetVector("_SphereVelocity", Sphere.velocity);
         flowFieldCS.SetFloat("_SphereRadius", Sphere.GetComponent<SphereCollider>().radius);
         flowFieldCS.Dispatch(0, flowBufferSize / 64, 1, 1);
 
         magnitudeDBT.Swap();
+        directionDBT.Swap();
 
         //SwapTextureBuffers();
         Graphics.RenderMeshPrimitives(renderParams, mesh, 0, flowBufferSize);

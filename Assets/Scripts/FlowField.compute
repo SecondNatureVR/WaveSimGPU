@@ -13,6 +13,7 @@ RWTexture3D<float3> _VelocityRW;
 float _decay;
 float _deltaTime;
 float _Time;
+float _TimeScale;
 
 float3 _SpherePos;
 float3 _SphereVelocity;
@@ -69,39 +70,29 @@ float applyDecay(float value)
     return max(0, value + _decay * _deltaTime);
 }
 
+float3 encodeDirection(float3 direction)
+{
+    return float4((direction + 1) * 0.5, 1);
+}
+
+float3 encodeDirection(float x, float y, float z)
+{
+    return encodeDirection(float3(x, y, z));
+
+}
+
 [numthreads(64,1,1)]
 void UpdateTransforms (uint3 id : SV_DispatchThreadID)
 {
-    float m = _HeightMagnitudes[GetCoord(id.x)];
-    _HeightMagnitudesRW[GetCoord(id.x)] = applyDecay(m);
+    float3 pos = GetWorldPosition(id.x);
+    uint3 coord = GetCoord(id.x);
+    float currentMagnitude = _HeightMagnitudes[coord];
+    _HeightMagnitudesRW[coord] = applyDecay(currentMagnitude);
 
-    //float3 pos = flow.transform._m03_m13_m23;
-    //if (distance(pos, _SpherePos) < _SphereRadius) {
-    //    if (length(_SphereVelocity) > m)
-    //    {
-    //        flowVectors[id.x].magnitude = clamp(0.2, 1, length(_SphereVelocity));
-    //        float4x4 tmat = flowVectors[id.x].transform;
-
-    //        // set new rotation toward velocity
-    //        // https://math.stackexchange.com/questions/180418/calculate-rotation-matrix-to-align-vector-a-to-vector-b-in-3d
-    //        float3x3 rmat = 0.0;
-    //        rmat._m00_m11_m22 = float3(1, 1, 1);
-
-    //        float3 a = float3(0, 1, 0);
-    //        float3 b = normalize(_SphereVelocity);
-    //        float3 v = cross(a, b);
-    //        float c = dot(a, b);
-    //        float3x3 ssc = {
-    //             0, -v.z,  v.y,
-    //           v.z,    0, -v.x,
-    //          -v.y,  v.x,    0,
-    //        };
-    //        float3x3 term2 = mul(ssc, ssc) * rcp(1 + c);
-    //        rmat += ssc + term2;
-
-    //        //flowVectors[id.x].transform._m00_m01_m02 = rmat._m00_m01_m02;
-    //        //flowVectors[id.x].transform._m10_m11_m12 = rmat._m10_m11_m12;
-    //        //flowVectors[id.x].transform._m20_m21_m22 = rmat._m20_m21_m22;
-    //    }
-    //}
+    float t = _Time * _TimeScale;
+    
+    if (distance(pos, _SpherePos) < _SphereRadius) {
+        _HeightMagnitudesRW[coord] = 1;
+        _NormalDirectionsRW[coord] = encodeDirection(normalize(_SphereVelocity));
+    }
 }
