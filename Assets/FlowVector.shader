@@ -28,10 +28,6 @@ Shader "Instanced/FlowVector"
 		#include "UnityLightingCommon.cginc"
 		#include "AutoLight.cginc"
 
-        // Ronja tutorials
-        // https://www.ronja-tutorials.com/post/047-invlerp_remap/
-	    #include "Interpolation.cginc"
-
         struct FlowVector {
             float4x4 transform;
             float magnitude;

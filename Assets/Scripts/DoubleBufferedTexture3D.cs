@@ -4,11 +4,8 @@ using UnityEngine;
 
 public class DoubleBufferedTexture3D
 {
-    private RenderTexture _RT1;
-    private RenderTexture _RT2;
-    public RenderTexture readTexture { get => _RT1; }
-    public RenderTexture writeTexture { get => _RT2; }
-
+    public RenderTexture readTexture;
+    public RenderTexture writeTexture;
     private Vector3Int dimensions;
 
     public Format format;
@@ -42,8 +39,8 @@ public class DoubleBufferedTexture3D
         descriptor.autoGenerateMips = false;
         descriptor.sRGB = false;
 
-        _RT1 = AllocateBuffer();
-        _RT2 = AllocateBuffer();
+        readTexture = AllocateBuffer();
+        writeTexture = AllocateBuffer();
     }
 
     static public DoubleBufferedTexture3D CreateMagnitude(int width, int height, int depth)
@@ -65,14 +62,15 @@ public class DoubleBufferedTexture3D
 
     public void Init(Texture3D initTexture)
     {
-        Graphics.CopyTexture(initTexture, _RT1);
-        Graphics.CopyTexture(initTexture, _RT2);
+        Graphics.CopyTexture(initTexture, readTexture);
+        Graphics.CopyTexture(initTexture, writeTexture);
     }
 
     public void Swap()
     {
-        var tmp = _RT1;
-        _RT1 = _RT2;
-        _RT2 = tmp;
+        Graphics.CopyTexture(writeTexture, readTexture);
+        var tmp = readTexture;
+        readTexture = writeTexture;
+        writeTexture = tmp;
     }
 }
