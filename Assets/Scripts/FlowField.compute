@@ -6,6 +6,10 @@ Texture3D<snorm float3> _NormalDirections;
 Texture3D<float> _HeightMagnitudes;
 Texture3D<float3> _Velocity;
 
+RWTexture3D<snorm float3> _NormalDirectionsRW;
+RWTexture3D<float> _HeightMagnitudesRW;
+RWTexture3D<float3> _VelocityRW;
+
 float _decay;
 float _deltaTime;
 
@@ -62,10 +66,8 @@ float3 GetWorldPosition(int index) {
 [numthreads(64,1,1)]
 void UpdateTransforms (uint3 id : SV_DispatchThreadID)
 {
-    uint3 coord = GetCoord(id.x);
-    float3 uv = GetWorldUV(id.x);
     float m = FLOW_SAMPLE_MAGNITUDE(uv);
-    //flowVectors[id.x].magnitude = max(0, m + _decay * _deltaTime);
+    _HeightMagnitudesRW[id.xyz] = max(0, m + _decay * _deltaTime);
 
     //float3 pos = flow.transform._m03_m13_m23;
     //if (distance(pos, _SpherePos) < _SphereRadius) {

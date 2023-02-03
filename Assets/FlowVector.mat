@@ -34,7 +34,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _NormalDirections:
-        m_Texture: {fileID: 0}
+        m_Texture: {fileID: 11700000, guid: fb3ad99eea643ee4ea7374d23ea4deca, type: 2}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _Velocity:
@@ -46,7 +46,7 @@ Material:
     - _DrawDebug: 1
     - _FlipMag: 0
     - _Glossiness: 0.5
-    - _MagScale: 1
+    - _MagScale: 1.1
     - _Metallic: 0
     - _SmoothMax: 1
     - _SmoothMin: 0

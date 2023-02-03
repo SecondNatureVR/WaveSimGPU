@@ -239,6 +239,8 @@ MonoBehaviour:
   decay: -1.28
   mesh: {fileID: -7929139438592967118, guid: 68435589d27985143a52c97ea52dabfc, type: 3}
   Sphere: {fileID: 229356719}
+  DEBUG_ARROW: {fileID: 0}
+  initMagnitudeTex: {fileID: 11700000, guid: 5ab0c1326260ddc479392284f8a7e8c9, type: 2}
   _UV_Offset: {x: 0, y: 0, z: 0}
   _UV_Scale: {x: 1, y: 1, z: 1}
 --- !u!65 &538867674

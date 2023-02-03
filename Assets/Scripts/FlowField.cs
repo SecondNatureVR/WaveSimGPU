@@ -1,9 +1,10 @@
 using System;
 using System.Linq;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 
-[ExecuteInEditMode]
+// Draws inspiration from https://github.com/keijiro/StableFluids/blob/master/Assets/Fluid.cs
 public class FlowField : MonoBehaviour
 {
     [SerializeField] private ComputeShader flowFieldCS;
@@ -12,6 +13,7 @@ public class FlowField : MonoBehaviour
     [SerializeField] private Mesh mesh;
     [SerializeField] public Rigidbody Sphere;
     [SerializeField] public GameObject DEBUG_ARROW;
+    [SerializeField] public Texture3D initMagnitudeTex;
     private Bounds bounds;
     private Vector3Int dimensions;
     private int flowBufferSize;
@@ -26,8 +28,14 @@ public class FlowField : MonoBehaviour
     private Texture3D velocityTex;
     // normal map for velocity
     private Texture3D directionTex;
-    // height map for magnitude
-    private Texture3D magnitudeTex;
+
+    // RW Versions
+    // normal map for velocity
+    private Texture3D velocityTexRW;
+    // normal map for velocity
+    private Texture3D directionTexRW;
+
+    private DoubleBufferedTexture3D magnitudeDBT;
 
     struct FlowVector
     {
@@ -99,11 +107,8 @@ public class FlowField : MonoBehaviour
             Vector3 pos = GetWorldPosition(i);
             Vector3 flow = Vector3.zero - pos;
             FlowVector v = new FlowVector();
-            v.position = pos;
             v.direction = flow.normalized;
             v.magnitude = (flow.magnitude / bounds.extents.magnitude);
-            v.velocity = flow;
-            v.rotation = Quaternion.FromToRotation(Vector3.up, flow.normalized);
             vectors[index] = v;
             index++;
         }
@@ -111,10 +116,13 @@ public class FlowField : MonoBehaviour
         Init3DTextures(vectors);
 
         instancedMaterial.SetTexture("_NormalDirections", directionTex);
-        instancedMaterial.SetTexture("_HeightMagnitudes", magnitudeTex);
+        instancedMaterial.SetTexture("_HeightMagnitudes", magnitudeDBT.readTexture);
         Shader.SetGlobalTexture("_NormalDirections", directionTex);
-        Shader.SetGlobalTexture("_HeightMagnitudes", magnitudeTex);
+        Shader.SetGlobalTexture("_HeightMagnitudes", magnitudeDBT.readTexture);
         Shader.SetGlobalTexture("_Velocity", velocityTex);
+        Shader.SetGlobalTexture("_NormalDirectionsRW", directionTexRW);
+        Shader.SetGlobalTexture("_HeightMagnitudesRW", magnitudeDBT.writeTexture);
+        Shader.SetGlobalTexture("_VelocityRW", velocityTexRW);
         Shader.SetGlobalVector("BOUNDS_MIN", bounds.min);
         Shader.SetGlobalVector("BOUNDS_EXTENTS", bounds.extents);
         Shader.SetGlobalVector("BOUNDS_SIZE", bounds.size);
@@ -136,13 +144,14 @@ public class FlowField : MonoBehaviour
     private void Init3DTextures(FlowVector[] vectors)
     {
         // FlowVector.direction = unit Vector3 w/ component values -1...1
-        directionTex = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.RGB24, false, true);
+        directionTex = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.ARGB32, false, true);
         directionTex.filterMode = FilterMode.Point;
         directionTex.wrapMode = TextureWrapMode.Repeat;
         directionTex.SetPixelData(vectors
             .Select(v => (v.direction + Vector3.one) * 0.5f)
             .SelectMany(d => new byte[] {
                 // d.z.... then d.x....
+                (byte) 255,
                 (byte) (d.z * 255),
                 (byte) (d.y * 255),
                 (byte) (d.x * 255)
@@ -150,33 +159,37 @@ public class FlowField : MonoBehaviour
             .ToArray(),
             0
         );
+        directionTexRW = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.ARGB32, false, true);
+        Debug.Log(SystemInfo.maxTexture3DSize);
+        directionTexRW.filterMode = FilterMode.Point;
+        directionTexRW.wrapMode = TextureWrapMode.Repeat;
+        Graphics.CopyTexture(directionTex, directionTexRW);
+
         directionTex.Apply();
-
-        var dirs = vectors.Select(v => v.direction).ToArray();
-        var packed = dirs.Select(d => (d + Vector3.one) * 0.5f).ToArray();
-        var allPacked = packed.SelectMany(p => new float[] { p.x, p.y, p.z }).Any(f => f > 1 || f < 0);
-        var cols = packed.Select(p => new Color(p.x, p.y, p.z)).ToArray();
-        var unpack = cols.Select(c => new Vector3(c.r, c.g, c.b)).Select(v => v * 2 - Vector3.one).ToArray();
-        var allNorm = unpack.Any(v => v.magnitude > 1);
-        var mmag = unpack.Select(v => v.magnitude).Max();
-        Debug.Log($"directionTex.graphicsFormat={directionTex.graphicsFormat}");
+        directionTexRW.Apply();
 
 
-        magnitudeTex = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.RFloat, false, true);
-        directionTex.filterMode = FilterMode.Trilinear;
-        magnitudeTex.wrapMode = TextureWrapMode.Repeat;
-        magnitudeTex.SetPixelData(vectors.Select(v => v.magnitude).ToArray(), 0);
-        magnitudeTex.Apply();
-
-        Debug.Log($"magnitudeTex.graphicsFormat={magnitudeTex.graphicsFormat}");
+        magnitudeDBT = DoubleBufferedTexture3D.CreateMagnitude(dimensions.x, dimensions.y, dimensions.z);
+        magnitudeDBT.Init(initMagnitudeTex);
 
         velocityTex = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.RGBAHalf, false, true);
         velocityTex.filterMode = FilterMode.Trilinear;
         velocityTex.wrapMode = TextureWrapMode.Repeat;
         velocityTex.SetPixelData(vectors.Select(v => v.velocity).ToArray(), 0);
-        velocityTex.Apply();
 
+        velocityTexRW = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.RGBAHalf, false, true);
+        velocityTexRW.filterMode = FilterMode.Trilinear;
+        velocityTexRW.wrapMode = TextureWrapMode.Repeat;
+        Graphics.CopyTexture(velocityTex, velocityTexRW);
+
+        velocityTex.Apply();
+        velocityTexRW.Apply();
+
+        Debug.Log($"directionTex.graphicsFormat={directionTex.graphicsFormat}");
         Debug.Log($"velocityTex.graphicsFormat={velocityTex.graphicsFormat}");
+
+        AssetDatabase.CreateAsset(directionTex, $"Assets/Resources/directionInitTex.asset");
+        AssetDatabase.CreateAsset(velocityTex, $"Assets/Resources/velocityInitTex.asset");
     }
 
     private void Update()
@@ -188,16 +201,33 @@ public class FlowField : MonoBehaviour
         flowFieldCS.SetVector("_SpherePos", Sphere.position);
         flowFieldCS.SetVector("_SphereVelocity", Sphere.velocity);
         flowFieldCS.SetFloat("_SphereRadius", Sphere.GetComponent<SphereCollider>().radius);
-        //flowFieldCS.Dispatch(0, flowBufferSize/64, 1, 1);
+        //flowFieldCS.Dispatch(0, flowBufferSize / 64, 1, 1);
 
-        // Dispatch update flowfield
-        Graphics.RenderMeshPrimitives(renderParams, mesh, 0, flowBufferSize); 
+        //magnitudeDBT.Swap();
+
+        //SwapTextureBuffers();
+        Graphics.RenderMeshPrimitives(renderParams, mesh, 0, flowBufferSize);
     }
 
     private void OnDisable()
     {
-        DestroyImmediate(directionTex);
-        DestroyImmediate(magnitudeTex);
-        DestroyImmediate(velocityTex);
+        Destroy(directionTex);
+        Destroy(velocityTex);
+        Destroy(directionTexRW);
+        Destroy(velocityTexRW);
+        Destroy(magnitudeDBT.readTexture);
+        Destroy(magnitudeDBT.writeTexture);
+    }
+
+    private void SwapTextureBuffers()
+    {
+        Texture3D tmp;
+        tmp = directionTex;
+        directionTex = directionTexRW;
+        directionTexRW = tmp;
+
+        tmp = velocityTex;
+        velocityTex = velocityTexRW;
+        velocityTexRW = tmp;
     }
 }
