@@ -1,9 +1,10 @@
 using System;
 using System.Linq;
-using System.Runtime.CompilerServices;
+using Unity.Collections;
+using Unity.VisualScripting;
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.Experimental.Rendering;
+using UnityEngine.UI;
 
 // Draws inspiration from https://github.com/keijiro/StableFluids/blob/master/Assets/Fluid.cs
 public class FlowField : MonoBehaviour
@@ -18,18 +19,31 @@ public class FlowField : MonoBehaviour
     [SerializeField] public Texture3D initDirectionTex;
 
     private Bounds bounds;
-    private Vector3Int dimensions;
     private int flowBufferSize;
     private RenderParams renderParams;
 
-    private Vector3 TEXEL_SIZE;
     private Vector3Int TEX_DIMENSIONS;
+    private Vector3 TEXEL_SIZE;
     [SerializeField] public Vector3 _UV_Offset = Vector3.zero;
     [SerializeField] public Vector3 _UV_Scale = Vector3.one;
     [SerializeField] public float _TimeScale = 3f;
+    [SerializeField] public float _DiffusionScale = 3f;
+    [SerializeField] public float _AdvectScale = 25f;
+    [SerializeField] public float _AddForceScale = 1f;
+    [SerializeField, Range(5,7)] public int texResolution;
    
     private DoubleBufferedTexture3D directionDBT;
     private DoubleBufferedTexture3D magnitudeDBT;
+
+    // Compute Params
+    private int threadGroupX;
+
+    // Debugging
+    private ComputeBuffer backStepPosCB;
+    private Vector4[] backStepPosArr;
+    private float SphereRadius;
+    [SerializeField] public bool _enableDebugForce = false;
+
 
     struct FlowVector
     {
@@ -72,8 +86,7 @@ public class FlowField : MonoBehaviour
     void Start()
     {
         bounds = GetComponent<Collider>().bounds;
-        dimensions = Vector3Int.RoundToInt(bounds.size);
-        TEX_DIMENSIONS = dimensions;
+        TEX_DIMENSIONS = Vector3Int.one * (int) Mathf.Pow(2, texResolution);
         TEXEL_SIZE = new Vector3(1.0f / TEX_DIMENSIONS.x, 1.0f / TEX_DIMENSIONS.y, 1.0f / TEX_DIMENSIONS.z);
 
         Init3DTextures();
@@ -88,9 +101,6 @@ public class FlowField : MonoBehaviour
         Shader.SetGlobalVector("BOUNDS_MIN", bounds.min);
         Shader.SetGlobalVector("BOUNDS_EXTENTS", bounds.extents);
         Shader.SetGlobalVector("BOUNDS_SIZE", bounds.size);
-        Shader.SetGlobalInt("WIDTH", dimensions.x);
-        Shader.SetGlobalInt("HEIGHT", dimensions.y);
-        Shader.SetGlobalInt("DEPTH", dimensions.z);
         Shader.SetGlobalVector("TEXEL_SIZE", TEXEL_SIZE);
         Shader.SetGlobalVector("TEX_DIMENSIONS", new Vector3(
             TEX_DIMENSIONS.x,
@@ -99,13 +109,28 @@ public class FlowField : MonoBehaviour
         ));
         Shader.SetGlobalVector("_UV_Offset", _UV_Offset);
         Shader.SetGlobalVector("_UV_Scale", _UV_Scale);
+        Shader.SetGlobalFloat("_DiffusionScale", _DiffusionScale);
+        Shader.SetGlobalFloat("_AdvectScale", _AdvectScale);
+
+        Shader.SetGlobalBuffer("_backStepPos", backStepPosCB);
+
         renderParams = new RenderParams(instancedMaterial);
         renderParams.worldBounds = bounds;
+
+        // Compute Threads
+        uint numthreadsX;
+        flowFieldCS.GetKernelThreadGroupSizes(0, out numthreadsX, out _, out _);
+        threadGroupX = Mathf.CeilToInt(flowBufferSize / (int)numthreadsX);
+
+        // DEBUG
+        backStepPosCB = new ComputeBuffer(flowBufferSize, sizeof(float) * 4);
+        backStepPosArr = new Vector4[flowBufferSize];
+        flowFieldCS.SetBuffer(0, "backStepPos", backStepPosCB);
     }
     private void Init3DTextures()
     {
         // create buffers for vectors 
-        flowBufferSize = dimensions.x * dimensions.y * dimensions.z;
+        flowBufferSize = TEX_DIMENSIONS.x * TEX_DIMENSIONS.y * TEX_DIMENSIONS.z;
 
         // Init values
         FlowVector[] vectors = new FlowVector[flowBufferSize];
@@ -114,15 +139,21 @@ public class FlowField : MonoBehaviour
         {
             Vector3 pos = GetWorldPosition(i);
             FlowVector v = new FlowVector();
+            Vector3 rotDir = new Vector3(Mathf.Cos(pos.x), Mathf.Sin(pos.y), Mathf.Sin(pos.z * 0.25f));
+            Vector3 centerDir = pos;
+            //float blendT = Mathf.Pow(pos.magnitude / bounds.extents.magnitude, 2);
             v.direction = pos.normalized;
-            v.magnitude = Vector3.Distance(pos, Vector3.zero) < 3 ? 1f : 0f;
+            // float centerMag = pos.magnitude;
+            // float rotMag = (pos.x - bounds.min.x) / bounds.size.x;
+            // v.magnitude = pos.x < 0 && pos.y < 0 && pos.z < 0 ? centerMag : 0;
+            v.magnitude = Vector3.Distance(pos, Vector3.zero) < 3 ? 0.3f : 0.1f;
             vectors[index++] = v;
         }
 
         if (initDirectionTex == null)
         {
             // FlowVector.direction = unit Vector3 w/ component values -1...1
-            var directionTex = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.ARGB32, false, true);
+            var directionTex = new Texture3D(TEX_DIMENSIONS.x, TEX_DIMENSIONS.y, TEX_DIMENSIONS.z, TextureFormat.ARGB32, false, true);
             directionTex.SetPixels(vectors
                 .Select(v => (v.direction + Vector3.one) * 0.5f)
                 .Select(d => new Color(d.z, d.y, d.x))
@@ -136,7 +167,7 @@ public class FlowField : MonoBehaviour
 
         if (initMagnitudeTex == null)
         {
-            var magnitudeTex = new Texture3D(dimensions.x, dimensions.y, dimensions.z, TextureFormat.RFloat, false, true);
+            var magnitudeTex = new Texture3D(TEX_DIMENSIONS.x, TEX_DIMENSIONS.y, TEX_DIMENSIONS.z, TextureFormat.RFloat, false, true);
             magnitudeTex.SetPixelData(vectors.Select(v => v.magnitude).ToArray(), 0);
             magnitudeTex.Apply();
 
@@ -146,42 +177,68 @@ public class FlowField : MonoBehaviour
     }
     private void InitDoubleBuffers()
     {
-        directionDBT = DoubleBufferedTexture3D.CreateDirection(dimensions.x, dimensions.y, dimensions.z);
+        directionDBT = DoubleBufferedTexture3D.CreateDirection(TEX_DIMENSIONS.x, TEX_DIMENSIONS.y, TEX_DIMENSIONS.z);
         directionDBT.Init(initDirectionTex);
 
-        magnitudeDBT = DoubleBufferedTexture3D.CreateMagnitude(dimensions.x, dimensions.y, dimensions.z);
+        magnitudeDBT = DoubleBufferedTexture3D.CreateMagnitude(TEX_DIMENSIONS.x, TEX_DIMENSIONS.y, TEX_DIMENSIONS.z);
         magnitudeDBT.Init(initMagnitudeTex);
     }
 
     private void Update()
     {
+        SphereRadius = Sphere.GetComponent<SphereCollider>().radius;
         Shader.SetGlobalVector("_UV_Offset", _UV_Offset);
         Shader.SetGlobalVector("_UV_Scale", _UV_Scale);
         Shader.SetGlobalFloat("_Time", Time.time);
         Shader.SetGlobalFloat("_TimeScale", _TimeScale);
         Shader.SetGlobalFloat("_deltaTime", Time.deltaTime);
         flowFieldCS.SetFloat("_decay", decay);
+        flowFieldCS.SetBool("_enableDebugForce", _enableDebugForce);
+        flowFieldCS.SetFloat("_AddForceScale", _AddForceScale);
         flowFieldCS.SetVector("_SpherePos", Sphere.transform.position);
         flowFieldCS.SetVector("_SphereVelocity", Sphere.velocity);
-        flowFieldCS.SetFloat("_SphereRadius", Sphere.GetComponent<SphereCollider>().radius);
-        //flowFieldCS.Dispatch(0, flowBufferSize / 64, 1, 1);
+        flowFieldCS.SetFloat("_SphereRadius", SphereRadius);
+        //flowFieldCS.Dispatch(2, threadGroupX, 1, 1); // DIFFUSE
+        flowFieldCS.Dispatch(0, threadGroupX, 1, 1); // ADVECT
+        flowFieldCS.Dispatch(1, threadGroupX, 1, 1); // ADDFORCE
 
-        //magnitudeDBT.Swap();
-        //directionDBT.Swap();
+        magnitudeDBT.Swap();
+        directionDBT.Swap();
 
-        //SwapTextureBuffers();
         Graphics.RenderMeshPrimitives(renderParams, mesh, 0, flowBufferSize);
+    }
+
+    // Debug
+    private void OnDrawGizmos()
+    {
+        backStepPosCB.GetData(backStepPosArr);
+        for (int i = 0; i < backStepPosArr.Length; i++)
+        {
+            var from = GetWorldPosition(i);
+            Vector3 to = backStepPosArr[i];
+            //if (Vector3.Distance(to, Vector3.zero) > 3)
+            if (Vector3.Distance(from, Sphere.transform.position) < SphereRadius) {
+                Gizmos.color = Color.white;
+                Gizmos.DrawLine(from, to);
+                Gizmos.color = Color.yellow;
+                Gizmos.DrawSphere(to, 0.05f);
+            }
+        }
     }
 
     private void OnDisable()
     {
         directionDBT.Destroy();
         magnitudeDBT.Destroy();
+
+        backStepPosCB.Release();
     }
 
     private void OnDestroy()
     {
        directionDBT.Destroy();
        magnitudeDBT.Destroy();
+
+       backStepPosCB.Dispose();
     }
 }

@@ -187,7 +187,7 @@ SphereCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Radius: 1.58
+  m_Radius: 0.61
   m_Center: {x: 0, y: 0, z: 0}
 --- !u!4 &229356723
 Transform:
@@ -236,14 +236,17 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   flowFieldCS: {fileID: 7200000, guid: 9920dfdfda1411544bc4e3a42b7b7163, type: 3}
   instancedMaterial: {fileID: 2100000, guid: 01e0f14974bd0dd47968aedc6174e8eb, type: 2}
-  decay: -1
+  decay: 0
   mesh: {fileID: -7929139438592967118, guid: 68435589d27985143a52c97ea52dabfc, type: 3}
   Sphere: {fileID: 229356719}
   DEBUG_ARROW: {fileID: 0}
-  initMagnitudeTex: {fileID: 11700000, guid: 5ab0c1326260ddc479392284f8a7e8c9, type: 2}
+  initMagnitudeTex: {fileID: 0}
+  initDirectionTex: {fileID: 0}
   _UV_Offset: {x: 0, y: 0, z: 0}
   _UV_Scale: {x: 1, y: 1, z: 1}
-  _TimeScale: 3
+  _TimeScale: 1
+  _DiffusionScale: 0.99
+  texResolution: 5
 --- !u!65 &538867674
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -423,7 +426,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   radius: 7
-  speed: 2
+  speed: 1
   Sphere: {fileID: 229356723}
 --- !u!54 &764246773
 Rigidbody:
@@ -537,7 +540,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 963194225}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -3.06, y: 8.23, z: -22.69}
+  m_LocalPosition: {x: 0, y: 0, z: -22.69}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []

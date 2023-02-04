@@ -9,6 +9,7 @@ Shader "Instanced/FlowVector"
         _SmoothMin ("SmoothMin", float) = 0
         _SmoothMax ("SmoothMax", float) = 0
         _MagScale ("MagScale", float) = 1
+        _MagCurve ("MagCurve", float) = 1
         [MaterialToggle] _FlipMag ("FlipMagnitude", float) = 0
         [MaterialToggle] _DrawDebug ("DrawDebug", float) = 0
     }
@@ -34,7 +35,7 @@ Shader "Instanced/FlowVector"
             float3 velocity;
         };
 
-        float _MagScale;
+        float _MagScale, _MagCurve;
         bool _FlipMag, _DrawDebug;
         float _SmoothMin, _SmoothMax;
         fixed4 _ColorMin, _ColorMax;
@@ -43,6 +44,8 @@ Shader "Instanced/FlowVector"
         float3 DRAWBOX_MIN, DRAWBOX_EXTENTS, DRAWBOX_SIZE;
         float3 TEXEL_SIZE;
         uint3 TEX_DIMENSIONS;
+
+
 
         UNITY_DECLARE_TEX3D_NOSAMPLER(_NormalDirections);
         UNITY_DECLARE_TEX3D_NOSAMPLER(_HeightMagnitudes);
@@ -55,6 +58,13 @@ Shader "Instanced/FlowVector"
         #define FLOW_SAMPLE_DIRECTION(uv) FLOW_SAMPLE(_NormalDirections, uv)
         #define FLOW_SAMPLE_MAGNITUDE(uv) FLOW_SAMPLE(_HeightMagnitudes, uv)
         #define FLOW_SAMPLE_VELOCITY(uv) FLOW_SAMPLE(_Velocity, uv)
+
+        // Debug
+		#ifdef SHADER_API_D3D11
+
+		StructuredBuffer<float4> _backStepPos;
+
+        #endif
 
 		uint3 GetTexCoord(int index) {
 			uint z = index % TEX_DIMENSIONS.z;
@@ -156,7 +166,7 @@ Shader "Instanced/FlowVector"
 		}
 
         float4x4 SetScaleFromMagnitude(float magnitude, inout float4x4 tmat) {
-            float s = smoothstep(_SmoothMin, _SmoothMax, magnitude*magnitude);
+            float s = lerp(_SmoothMin, _SmoothMax, min(pow(magnitude, _MagCurve), 1.2)) * _MagScale;
             if (_DrawDebug) {
                 s *= min(DRAWBOX_SIZE.x, min(DRAWBOX_SIZE.y, DRAWBOX_SIZE.z))
                    / max(BOUNDS_SIZE.x, max(BOUNDS_SIZE.y, BOUNDS_SIZE.z));
@@ -169,14 +179,16 @@ Shader "Instanced/FlowVector"
         void setup() {
 		#ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
 		#ifdef SHADER_API_D3D11
-
-			float3 pos = GetWorldPosition(unity_InstanceID);
+            float3 pos;
+            if (_DrawDebug) {
+                pos = _backStepPos[unity_InstanceID].xyz;
+            } else {
+				pos = GetWorldPosition(unity_InstanceID);
+            }
 			float4 uv = float4(GetTexUVFromWorldPosition(pos), 1);
             float3 velocity = FLOW_SAMPLE_VELOCITY(uv);
 			float3 direction = FLOW_SAMPLE_DIRECTION(uv).rgb * 2 - 1;
-			float magnitude = FLOW_SAMPLE_MAGNITUDE(uv).x;
-
-            magnitude *= _MagScale;
+			float magnitude = FLOW_SAMPLE_MAGNITUDE(uv);
 
             if (_FlipMag)
                 magnitude = 1 - magnitude;
@@ -202,14 +214,16 @@ Shader "Instanced/FlowVector"
 
         void surf (Input IN, inout SurfaceOutputStandard o)
         {
-			float strength = 0.5f;
+			float magnitude = 0.5f;
 			#ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
 			#ifdef SHADER_API_D3D11
                 float4 uv = GetWorldUV(unity_InstanceID);
-                strength = FLOW_SAMPLE_MAGNITUDE(uv);
+                magnitude = FLOW_SAMPLE_MAGNITUDE(uv);
+                if (_FlipMag)
+                    magnitude = 1 - magnitude;
 			#endif
 			#endif
-            o.Albedo = lerp(_ColorMin, _ColorMax, strength);
+            o.Albedo = lerp(_ColorMin, _ColorMax, magnitude);
             o.Alpha = 0.1f;
         }
         ENDCG

@@ -1,5 +1,7 @@
 // Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel Advect
+#pragma kernel AddForce
+#pragma kernel Diffuse
 
 Texture3D<unorm float4> _NormalDirections;
 Texture3D<float> _HeightMagnitudes;
@@ -7,10 +9,17 @@ Texture3D<float> _HeightMagnitudes;
 RWTexture3D<unorm float4> _NormalDirectionsRW;
 RWTexture3D<float> _HeightMagnitudesRW;
 
+RWStructuredBuffer<float4> backStepPos;
+
+bool _enableDebugForce;
+
 float _decay;
 float _deltaTime;
 float _Time;
 float _TimeScale;
+float _DiffusionScale;
+float _AdvectScale;
+float _AddForceScale;
 
 float3 _SpherePos;
 float3 _SphereVelocity;
@@ -19,10 +28,19 @@ float _SphereRadius;
 float4 _NormalDirections_TexelSize;
 SamplerState SmpClampPoint;
 
+#define _dTime _deltaTime * _TimeScale
+
 #define TSAMP SmpClampPoint
 #define FLOW_SAMPLE(texture3D, uv) texture3D.SampleLevel(TSAMP, uv, 0.0, 0)
-#define FLOW_SAMPLE_DIRECTION(uv) FLOW_SAMPLE(_NormalDirections, uv)
+#define FLOW_SAMPLE_DIRECTION(uv) decodeDirection(FLOW_SAMPLE(_NormalDirections, uv)).xyz
 #define FLOW_SAMPLE_MAGNITUDE(uv) FLOW_SAMPLE(_HeightMagnitudes, uv)
+
+#define GET_CURRENT_MAGNITUDE  _HeightMagnitudes[coord]
+#define GET_CURRENT_DIRECTION  decodeDirection(_NormalDirections[coord]).xyz
+#define GET_DIRECTION(coord)  decodeDirection(_NormalDirections[coord]).xyz
+#define GET_MAGNITUDE(coord) _HeightMagnitudes[coord]
+#define SET_DIRECTION(direction) _NormalDirectionsRW[coord] = encodeDirection(direction)
+#define SET_MAGNITUDE(magnitude) _HeightMagnitudesRW[coord] = magnitude;
 
 float3 _UV_Offset;
 float3 BOUNDS_MIN, BOUNDS_EXTENTS, BOUNDS_SIZE;
@@ -37,8 +55,8 @@ uint3 GetCoord(int index) {
     return uint3(x, y, z);
 }
 
-float4 GetIndexUV(int index) {
-    uint3 coord = GetCoord(index);
+float4 GetTexUV(uint3 coord)
+{
     return float4(
       coord.x * TEXEL_SIZE.x,
       coord.y * TEXEL_SIZE.y,
@@ -47,8 +65,13 @@ float4 GetIndexUV(int index) {
     );
 }
 
+float4 GetTexUV(int index) {
+    uint3 coord = GetCoord(index);
+    return GetTexUV(coord);
+}
+
 float4 GetWorldUV(int index) {
-    float3 uv = GetIndexUV(index).xyz;
+    float3 uv = GetTexUV(index).xyz;
     // Moves UV into center of texel in world space
     return float4(uv + TEXEL_SIZE * 0.5 + _UV_Offset, 1);
 }
@@ -81,7 +104,7 @@ float3 GetTexUVFromWorldPosition(float3 pos) {
 
 float applyDecay(float value)
 {
-    return max(0, value + _decay * _deltaTime);
+    return max(0, value + _decay * _dTime);
 }
 
 float3 decodeDirection(float4 direction)
@@ -94,37 +117,96 @@ float4 encodeDirection(float4 direction)
     return (direction + 1) * 0.5;
 }
 
-float4 encodeDirection(float x, float y, float z)
+float4 encodeDirection(float3 direction)
 {
-    return encodeDirection(float4(x, y, z, 1));
+    return encodeDirection(float4(normalize(direction), 1));
 }
 
-//[numthreads(64,1,1)]
-//void UpdateTransforms (uint3 id : SV_DispatchThreadID)
-//{
-//    float3 pos = GetWorldPosition(id.x);
-//    uint3 coord = GetCoord(id.x);
-//    float currentMagnitude = _HeightMagnitudes[coord];
-//    _HeightMagnitudesRW[coord] = applyDecay(currentMagnitude);
-//
-//    float t = _Time * _TimeScale;
-//    
-//    if (distance(pos, _SpherePos) < _SphereRadius) {
-//        _HeightMagnitudesRW[coord] = 1;
-//        _NormalDirectionsRW[coord] = encodeDirection(normalize(_SphereVelocity));
-//    }
-//}
+float4 encodeDirection(float x, float y, float z)
+{
+    return encodeDirection(float3(x, y, z));
+}
 
 // Advect step
-[numthreads(64, 1, 1)]
+[numthreads(128, 1, 1)]
 void Advect(uint3 id : SV_DispatchThreadID)
 {
     uint3 coord = GetCoord(id.x);
     float3 pos = GetWorldPosition(id.x);
-    float3 velocity = _HeightMagnitudes[coord] * decodeDirection(_NormalDirections[coord]);
-    float3 backstepPos = pos - velocity * _deltaTime;
-    float3 backstepUV = GetTexUVFromWorldPosition(backstepPos);
+    float cMag = GET_CURRENT_MAGNITUDE;
+    float3 cDir = GET_CURRENT_DIRECTION;
+    float3 velocity = cMag * cDir;
+    float3 backstepWorldPos = pos - velocity * _dTime * _AdvectScale;
+    float3 backstepUV = GetTexUVFromWorldPosition(backstepWorldPos);
 
-    _HeightMagnitudesRW[coord] = FLOW_SAMPLE_MAGNITUDE(backstepUV);
-    _NormalDirectionsRW[coord] = FLOW_SAMPLE_DIRECTION(backstepUV);
+    backStepPos[id.x] = float4(backstepWorldPos, 1);
+
+    float sMag = FLOW_SAMPLE_MAGNITUDE(backstepUV);
+    float3 sDir = FLOW_SAMPLE_DIRECTION(backstepUV);
+    float3 sVel = sMag * sDir;
+    float3 lerpVel = lerp(velocity, sVel, _dTime);
+
+    SET_MAGNITUDE(length(lerpVel));
+    SET_DIRECTION(normalize(lerpVel));
+}
+
+// Add Force
+[numthreads(128, 1, 1)]
+void AddForce(uint3 id : SV_DispatchThreadID)
+{
+    float3 pos = GetWorldPosition(id.x);
+    uint3 coord = GetCoord(id.x);
+    float sDist = distance(pos, _SpherePos);
+    if (_enableDebugForce && sDist < _SphereRadius)
+    {
+        float cMag = GET_CURRENT_MAGNITUDE;
+        float3 cDir = GET_CURRENT_DIRECTION;
+        float3 cVel = cMag * cDir;
+        float3 nVel = lerp(cVel, _SphereVelocity * _AddForceScale, _dTime * rcp(1 + sDist));
+        SET_MAGNITUDE(length(nVel));
+        SET_DIRECTION(normalize(nVel));
+    }
+}
+
+bool isOutOfBounds(int3 coord)
+{
+    return !( 0 < coord.x < (int)  TEX_DIMENSIONS.x
+           && 0 < coord.y < (int)  TEX_DIMENSIONS.y
+           && 0 < coord.z < (int)  TEX_DIMENSIONS.z
+    );
+}
+
+void averageSurrounding(int3 coord, out float outMagnitude, out float3 outDirection)
+{
+    outMagnitude = 0.0;
+    for (int x = -1; x < 2; x++)
+    {
+        for (int y = -1; y < 2; y++)
+        {
+            for (int z = -1; z < 2; z++)
+            {
+                int3 offset = int3(x, y, z);
+                int3 adjCoord = coord + offset;
+                float4 adjUV = GetTexUV(adjCoord);
+                float adjMag = FLOW_SAMPLE_MAGNITUDE(adjUV);
+                outMagnitude += adjMag;
+                outDirection += FLOW_SAMPLE_DIRECTION(adjUV) * adjMag;
+            }
+        }
+    }
+    outMagnitude /= 27.0;
+    outDirection = normalize(outDirection / 27.0);
+}
+
+[numthreads(128, 1, 1)]
+void Diffuse(uint3 id : SV_DispatchThreadID)
+{
+    uint3 coord = GetCoord(id.x);
+    float3 dir = GET_CURRENT_DIRECTION;
+    float mag = GET_CURRENT_MAGNITUDE;
+    float3 outDir = 0.0;
+    float outMag = 0.0;
+    averageSurrounding(coord, outMag, outDir);
+    SET_MAGNITUDE(applyDecay(lerp(mag, outMag * _DiffusionScale, _dTime)));
+    SET_DIRECTION(lerp(dir, outDir * _DiffusionScale, _dTime * _DiffusionScale));
 }

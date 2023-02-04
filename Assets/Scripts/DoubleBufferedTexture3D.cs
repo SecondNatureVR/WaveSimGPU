@@ -54,6 +54,7 @@ public class DoubleBufferedTexture3D : Object
     RenderTexture AllocateBuffer()
     {
         var rt = new RenderTexture(descriptor);
+        rt.wrapMode = TextureWrapMode.Clamp;
         rt.Create();
         return rt;
     }

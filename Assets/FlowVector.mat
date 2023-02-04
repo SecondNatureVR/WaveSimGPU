@@ -14,7 +14,6 @@ Material:
   m_ValidKeywords: []
   m_InvalidKeywords:
   - 
-  - _DRAWDEBUG_ON
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 1
   m_DoubleSidedGI: 0
@@ -43,12 +42,13 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _DrawDebug: 1
+    - _DrawDebug: 0
     - _FlipMag: 0
     - _Glossiness: 0.5
-    - _MagScale: 1.1
+    - _MagCurve: 1.64
+    - _MagScale: 0.01
     - _Metallic: 0
-    - _SmoothMax: 1
+    - _SmoothMax: 20
     - _SmoothMin: 0
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
