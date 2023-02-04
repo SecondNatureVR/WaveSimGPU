@@ -147,7 +147,7 @@ public class FlowField : MonoBehaviour
             // float centerMag = pos.magnitude;
             // float rotMag = (pos.x - bounds.min.x) / bounds.size.x;
             // v.magnitude = pos.x < 0 && pos.y < 0 && pos.z < 0 ? centerMag : 0;
-            v.magnitude = Vector3.Distance(pos, Vector3.zero) < 3 ? 0.3f : 0.1f;
+            v.magnitude = Vector3.Distance(pos, Vector3.zero) < 3 ? 0.3f : 0.001f;
             vectors[index++] = v;
         }
 
@@ -199,8 +199,8 @@ public class FlowField : MonoBehaviour
         flowFieldCS.SetVector("_SpherePos", Sphere.transform.position);
         flowFieldCS.SetVector("_SphereVelocity", Sphere.velocity);
         flowFieldCS.SetFloat("_SphereRadius", SphereRadius);
-        //flowFieldCS.Dispatch(2, threadGroupX, 1, 1); // DIFFUSE
         flowFieldCS.Dispatch(0, threadGroupX, 1, 1); // ADVECT
+        flowFieldCS.Dispatch(2, threadGroupX, 1, 1); // DIFFUSE
         flowFieldCS.Dispatch(1, threadGroupX, 1, 1); // ADDFORCE
 
         magnitudeDBT.Swap();

@@ -241,12 +241,16 @@ MonoBehaviour:
   Sphere: {fileID: 229356719}
   DEBUG_ARROW: {fileID: 0}
   initMagnitudeTex: {fileID: 0}
-  initDirectionTex: {fileID: 0}
+  initDirectionTex: {fileID: 11700000, guid: 1d25369c7aac0e24c81cc76851c0ed2d, type: 2}
   _UV_Offset: {x: 0, y: 0, z: 0}
   _UV_Scale: {x: 1, y: 1, z: 1}
   _TimeScale: 1
   _DiffusionScale: 0.99
+  _AdvectScale: 25
+  _AddForceScale: 1
   texResolution: 5
+  _enableDebugForce: 0
+  _drawDebugAdvect: 0
 --- !u!65 &538867674
 BoxCollider:
   m_ObjectHideFlags: 0

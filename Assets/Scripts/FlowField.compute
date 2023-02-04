@@ -1,7 +1,6 @@
-// Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel Advect
-#pragma kernel AddForce
 #pragma kernel Diffuse
+#pragma kernel AddForce
 
 Texture3D<unorm float4> _NormalDirections;
 Texture3D<float> _HeightMagnitudes;

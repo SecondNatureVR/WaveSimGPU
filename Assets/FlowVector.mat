@@ -45,10 +45,10 @@ Material:
     - _DrawDebug: 0
     - _FlipMag: 0
     - _Glossiness: 0.5
-    - _MagCurve: 1.64
-    - _MagScale: 0.01
+    - _MagCurve: 1
+    - _MagScale: 1
     - _Metallic: 0
-    - _SmoothMax: 20
+    - _SmoothMax: 1
     - _SmoothMin: 0
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
