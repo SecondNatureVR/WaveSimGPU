@@ -43,6 +43,7 @@ public class FlowField : MonoBehaviour
     private Vector4[] backStepPosArr;
     private float SphereRadius;
     [SerializeField] public bool _enableDebugForce = false;
+    [SerializeField] public bool _drawDebugAdvect = false;
 
 
     struct FlowVector
@@ -211,17 +212,20 @@ public class FlowField : MonoBehaviour
     // Debug
     private void OnDrawGizmos()
     {
-        backStepPosCB.GetData(backStepPosArr);
-        for (int i = 0; i < backStepPosArr.Length; i++)
+        if (_drawDebugAdvect)
         {
-            var from = GetWorldPosition(i);
-            Vector3 to = backStepPosArr[i];
-            //if (Vector3.Distance(to, Vector3.zero) > 3)
-            if (Vector3.Distance(from, Sphere.transform.position) < SphereRadius) {
-                Gizmos.color = Color.white;
-                Gizmos.DrawLine(from, to);
-                Gizmos.color = Color.yellow;
-                Gizmos.DrawSphere(to, 0.05f);
+            backStepPosCB.GetData(backStepPosArr);
+            for (int i = 0; i < backStepPosArr.Length; i++)
+            {
+                var from = GetWorldPosition(i);
+                Vector3 to = backStepPosArr[i];
+                //if (Vector3.Distance(to, Vector3.zero) > 3)
+                if (Vector3.Distance(from, Sphere.transform.position) < SphereRadius) {
+                    Gizmos.color = Color.white;
+                    Gizmos.DrawLine(from, to);
+                    Gizmos.color = Color.yellow;
+                    Gizmos.DrawSphere(to, 0.05f);
+                }
             }
         }
     }
