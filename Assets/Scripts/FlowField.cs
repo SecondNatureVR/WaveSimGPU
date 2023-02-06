@@ -5,6 +5,7 @@ using Unity.VisualScripting;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.UIElements;
 
 // Draws inspiration from https://github.com/keijiro/StableFluids/blob/master/Assets/Fluid.cs
 public class FlowField : MonoBehaviour
@@ -44,7 +45,10 @@ public class FlowField : MonoBehaviour
     private float SphereRadius;
     [SerializeField] public bool _enableDebugForce = false;
     [SerializeField] public bool _drawDebugAdvect = false;
+    [SerializeField] public bool _drawFlowVectors = true;
 
+
+    private ParticleSystemForceField forceField;
 
     struct FlowVector
     {
@@ -127,6 +131,10 @@ public class FlowField : MonoBehaviour
         backStepPosCB = new ComputeBuffer(flowBufferSize, sizeof(float) * 4);
         backStepPosArr = new Vector4[flowBufferSize];
         flowFieldCS.SetBuffer(0, "backStepPos", backStepPosCB);
+
+        forceField = GetComponent<ParticleSystemForceField>();
+        forceField.vectorField = new Texture3D(TEX_DIMENSIONS.x, TEX_DIMENSIONS.y, TEX_DIMENSIONS.z, TextureFormat.ARGB32, false, true);
+        forceField.vectorField.Apply(false);
     }
     private void Init3DTextures()
     {
@@ -143,7 +151,7 @@ public class FlowField : MonoBehaviour
             Vector3 rotDir = new Vector3(Mathf.Cos(pos.x), Mathf.Sin(pos.y), Mathf.Sin(pos.z * 0.25f));
             Vector3 centerDir = pos;
             //float blendT = Mathf.Pow(pos.magnitude / bounds.extents.magnitude, 2);
-            v.direction = pos.normalized;
+            v.direction = Vector3.up;
             // float centerMag = pos.magnitude;
             // float rotMag = (pos.x - bounds.min.x) / bounds.size.x;
             // v.magnitude = pos.x < 0 && pos.y < 0 && pos.z < 0 ? centerMag : 0;
@@ -200,13 +208,15 @@ public class FlowField : MonoBehaviour
         flowFieldCS.SetVector("_SphereVelocity", Sphere.velocity);
         flowFieldCS.SetFloat("_SphereRadius", SphereRadius);
         flowFieldCS.Dispatch(0, threadGroupX, 1, 1); // ADVECT
-        flowFieldCS.Dispatch(2, threadGroupX, 1, 1); // DIFFUSE
-        flowFieldCS.Dispatch(1, threadGroupX, 1, 1); // ADDFORCE
+        flowFieldCS.Dispatch(1, threadGroupX, 1, 1); // DIFFUSE
+        flowFieldCS.Dispatch(2, threadGroupX, 1, 1); // ADDFORCE
 
+        Graphics.CopyTexture(directionDBT.readTexture, forceField.vectorField);
         magnitudeDBT.Swap();
         directionDBT.Swap();
 
-        Graphics.RenderMeshPrimitives(renderParams, mesh, 0, flowBufferSize);
+        if (_drawFlowVectors) 
+            Graphics.RenderMeshPrimitives(renderParams, mesh, 0, flowBufferSize);
     }
 
     // Debug

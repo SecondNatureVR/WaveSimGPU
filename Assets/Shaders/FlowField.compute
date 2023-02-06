@@ -2,9 +2,6 @@
 #pragma kernel Diffuse
 #pragma kernel AddForce
 
-Texture3D<unorm float4> _NormalDirections;
-Texture3D<float> _HeightMagnitudes;
-
 RWTexture3D<unorm float4> _NormalDirectionsRW;
 RWTexture3D<float> _HeightMagnitudesRW;
 
@@ -14,7 +11,6 @@ bool _enableDebugForce;
 
 float _decay;
 float _deltaTime;
-float _Time;
 float _TimeScale;
 float _DiffusionScale;
 float _AdvectScale;
@@ -24,113 +20,21 @@ float3 _SpherePos;
 float3 _SphereVelocity;
 float _SphereRadius;
 
-float4 _NormalDirections_TexelSize;
-SamplerState SmpClampPoint;
 
 #define _dTime _deltaTime * _TimeScale
 
-#define TSAMP SmpClampPoint
-#define FLOW_SAMPLE(texture3D, uv) texture3D.SampleLevel(TSAMP, uv, 0.0, 0)
-#define FLOW_SAMPLE_DIRECTION(uv) decodeDirection(FLOW_SAMPLE(_NormalDirections, uv)).xyz
-#define FLOW_SAMPLE_MAGNITUDE(uv) FLOW_SAMPLE(_HeightMagnitudes, uv)
-
-#define GET_CURRENT_MAGNITUDE  _HeightMagnitudes[coord]
-#define GET_CURRENT_DIRECTION  decodeDirection(_NormalDirections[coord]).xyz
-#define GET_DIRECTION(coord)  decodeDirection(_NormalDirections[coord]).xyz
-#define GET_MAGNITUDE(coord) _HeightMagnitudes[coord]
-#define SET_DIRECTION(direction) _NormalDirectionsRW[coord] = encodeDirection(direction)
-#define SET_MAGNITUDE(magnitude) _HeightMagnitudesRW[coord] = magnitude;
-
-float3 _UV_Offset;
-float3 BOUNDS_MIN, BOUNDS_EXTENTS, BOUNDS_SIZE;
-uint WIDTH, HEIGHT, DEPTH;
-float3 TEXEL_SIZE;
-uint3 TEX_DIMENSIONS;
-
-uint3 GetCoord(int index) {
-    uint z = index % TEX_DIMENSIONS.z;
-    uint y = (index / TEX_DIMENSIONS.z) % TEX_DIMENSIONS.y;
-    uint x = index / (TEX_DIMENSIONS.y * TEX_DIMENSIONS.z);
-    return uint3(x, y, z);
-}
-
-float4 GetTexUV(uint3 coord)
-{
-    return float4(
-      coord.x * TEXEL_SIZE.x,
-      coord.y * TEXEL_SIZE.y,
-      coord.z * TEXEL_SIZE.z,
-      1
-    );
-}
-
-float4 GetTexUV(int index) {
-    uint3 coord = GetCoord(index);
-    return GetTexUV(coord);
-}
-
-float4 GetWorldUV(int index) {
-    float3 uv = GetTexUV(index).xyz;
-    // Moves UV into center of texel in world space
-    return float4(uv + TEXEL_SIZE * 0.5 + _UV_Offset, 1);
-}
-
-float3 GetWorldPosition(int index) {
-    float3 uv = GetWorldUV(index).xyz;
-    return BOUNDS_MIN + float3(
-         uv.x * BOUNDS_SIZE.x,
-         uv.y * BOUNDS_SIZE.y,
-         uv.z * BOUNDS_SIZE.z
-    );
-}
-
-float3 invLerp(float3 from, float3 to, float3 value) {
-    return (value - from) / (to - from);
-}
-
-float3 GetTexUVFromWorldPosition(float3 pos) {
-    float3 WORLD_TEXEL_SIZE = float3(
-        BOUNDS_SIZE.x / TEX_DIMENSIONS.x,
-        BOUNDS_SIZE.y / TEX_DIMENSIONS.y,
-        BOUNDS_SIZE.z / TEX_DIMENSIONS.z
-    );
-    float3 offsetToCenter = WORLD_TEXEL_SIZE * 0.5;
-    float3 fromTexInWorldPos = BOUNDS_MIN + offsetToCenter;
-    float3 toTexInWorldPos = BOUNDS_MIN + BOUNDS_SIZE - offsetToCenter;
-    return invLerp(fromTexInWorldPos, toTexInWorldPos, pos);
-}
-
+#include "Assets/Shaders/FlowFieldCommon.hlsl"
 
 float applyDecay(float value)
 {
     return max(0, value + _decay * _dTime);
 }
 
-float3 decodeDirection(float4 direction)
-{
-    return direction.rgb * 2 - 1;
-}
-
-float4 encodeDirection(float4 direction)
-{
-    return (direction + 1) * 0.5;
-}
-
-float4 encodeDirection(float3 direction)
-{
-    return encodeDirection(float4(normalize(direction), 1));
-}
-
-float4 encodeDirection(float x, float y, float z)
-{
-    return encodeDirection(float3(x, y, z));
-}
-
 // Advect step
 [numthreads(128, 1, 1)]
 void Advect(uint3 id : SV_DispatchThreadID)
 {
-    uint3 coord = GetCoord(id.x);
+    uint3 coord = GetTexCoord(id.x);
     float3 pos = GetWorldPosition(id.x);
     float cMag = GET_CURRENT_MAGNITUDE;
     float3 cDir = GET_CURRENT_DIRECTION;
@@ -154,7 +58,7 @@ void Advect(uint3 id : SV_DispatchThreadID)
 void AddForce(uint3 id : SV_DispatchThreadID)
 {
     float3 pos = GetWorldPosition(id.x);
-    uint3 coord = GetCoord(id.x);
+    uint3 coord = GetTexCoord(id.x);
     float sDist = distance(pos, _SpherePos);
     if (_enableDebugForce && sDist < _SphereRadius)
     {
@@ -200,7 +104,7 @@ void averageSurrounding(int3 coord, out float outMagnitude, out float3 outDirect
 [numthreads(128, 1, 1)]
 void Diffuse(uint3 id : SV_DispatchThreadID)
 {
-    uint3 coord = GetCoord(id.x);
+    uint3 coord = GetTexCoord(id.x);
     float3 dir = GET_CURRENT_DIRECTION;
     float mag = GET_CURRENT_MAGNITUDE;
     float3 outDir = 0.0;
