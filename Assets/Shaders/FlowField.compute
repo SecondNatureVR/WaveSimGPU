@@ -10,8 +10,6 @@ RWStructuredBuffer<float4> backStepPos;
 bool _enableDebugForce;
 
 float _decay;
-float _deltaTime;
-float _TimeScale;
 float _DiffusionScale;
 float _AdvectScale;
 float _AddForceScale;
@@ -20,8 +18,6 @@ float3 _SpherePos;
 float3 _SphereVelocity;
 float _SphereRadius;
 
-
-#define _dTime _deltaTime * _TimeScale
 
 #include "Assets/Shaders/FlowFieldCommon.hlsl"
 

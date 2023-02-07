@@ -1,0 +1,22 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel UpdateParticles
+
+#include "Assets/Shaders/FlowFieldCommon.hlsl"
+
+struct Particle
+{
+    float3 position;
+    float3 velocity;
+};
+
+RWStructuredBuffer<Particle> Particles;
+
+[numthreads(64,1,1)]
+void UpdateParticles(uint3 id : SV_DispatchThreadID)
+{
+    float3 pos = Particles[id.x].position;
+    float3 uv = GetTexUVFromWorldPosition(pos); 
+    float3 velocity = FLOW_SAMPLE_DIRECTION(uv) * FLOW_SAMPLE_MAGNITUDE(uv);
+    float3 nextPos = lerp(pos, pos + velocity, _dTime);
+    Particles[id.x].position = nextPos;
+}

@@ -3,8 +3,6 @@ Shader "Particles/BiolumeParticle"
     Properties
     {
         _MainTex ("Texture", 2D) = "white" {}
-        _NormalDirections ("_NormalDirections", 3D) = "white" {}
-        _HeightMagnitudes("_HeightMagnitudes", 3D) = "white" {}
     }
     SubShader
     {
@@ -29,14 +27,16 @@ Shader "Particles/BiolumeParticle"
             struct appdata
             {
                 float4 vertex : POSITION;
-                float4 norm : NORMAL;
-                float2 uv : TEXCOORD0;
-
+                float4 uv : TEXCOORD0;
+                float3 velocity : TEXCOORD1;
             };
  
             struct v2f
             {
-                float2 uv : TEXCOORD0;
+                float4 uv : TEXCOORD0;
+                // Speed = uv.z
+                // AgePercent = uv.w
+                float3 velocity : TEXCOORD1;
                 UNITY_FOG_COORDS(1)
                 float4 vertex : SV_POSITION;
             };
@@ -47,8 +47,15 @@ Shader "Particles/BiolumeParticle"
             v2f vert (appdata v)
             {
                 v2f o;
+                float3 flowUV = GetTexUVFromWorldPosition(v.vertex.xyz);
+                float3 dir = FLOW_SAMPLE_DIRECTION(flowUV);
+                float mag = FLOW_SAMPLE_MAGNITUDE(flowUV);
                 o.vertex = UnityObjectToClipPos(v.vertex);
-                o.uv.xy = TRANSFORM_TEX(v.uv, _MainTex);
+                o.uv.xy = TRANSFORM_TEX(v.uv.xy, _MainTex);
+                v.uv.z = mag;
+                v.uv.w = 100;
+                v.velocity = dir * mag;
+
                 UNITY_TRANSFER_FOG(o,o.vertex);
                 return o;
             }

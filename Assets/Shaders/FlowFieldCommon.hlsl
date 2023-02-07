@@ -1,7 +1,12 @@
+#ifndef FLOWFIELDCOMMON_INCLUDED
+#define FLOWFIELDCOMMON_INCLUDED
+
 #include "UnityCG.cginc"
 
-#ifndef FLOWFIELDCOMMON_INCLDED
-#define FLOWFIELDCOMMON_INCLUDED
+float _deltaTime;
+float _TimeScale;
+
+#define _dTime _deltaTime * _TimeScale
 
 bool _DrawDebug;
 float3 BOUNDS_MIN, BOUNDS_SIZE;

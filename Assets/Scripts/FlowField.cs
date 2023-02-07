@@ -1,11 +1,7 @@
 using System;
 using System.Linq;
-using Unity.Collections;
-using Unity.VisualScripting;
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.UI;
-using UnityEngine.UIElements;
 
 // Draws inspiration from https://github.com/keijiro/StableFluids/blob/master/Assets/Fluid.cs
 public class FlowField : MonoBehaviour
@@ -46,9 +42,6 @@ public class FlowField : MonoBehaviour
     [SerializeField] public bool _enableDebugForce = false;
     [SerializeField] public bool _drawDebugAdvect = false;
     [SerializeField] public bool _drawFlowVectors = true;
-
-
-    private ParticleSystemForceField forceField;
 
     struct FlowVector
     {
@@ -131,10 +124,6 @@ public class FlowField : MonoBehaviour
         backStepPosCB = new ComputeBuffer(flowBufferSize, sizeof(float) * 4);
         backStepPosArr = new Vector4[flowBufferSize];
         flowFieldCS.SetBuffer(0, "backStepPos", backStepPosCB);
-
-        forceField = GetComponent<ParticleSystemForceField>();
-        forceField.vectorField = new Texture3D(TEX_DIMENSIONS.x, TEX_DIMENSIONS.y, TEX_DIMENSIONS.z, TextureFormat.ARGB32, false, true);
-        forceField.vectorField.Apply(false);
     }
     private void Init3DTextures()
     {
@@ -155,7 +144,7 @@ public class FlowField : MonoBehaviour
             // float centerMag = pos.magnitude;
             // float rotMag = (pos.x - bounds.min.x) / bounds.size.x;
             // v.magnitude = pos.x < 0 && pos.y < 0 && pos.z < 0 ? centerMag : 0;
-            v.magnitude = Vector3.Distance(pos, Vector3.zero) < 3 ? 0.3f : 0.001f;
+            v.magnitude = 0f; // Vector3.Distance(pos, Vector3.zero) < 3 ? 0.3f : 0.001f;
             vectors[index++] = v;
         }
 
@@ -211,7 +200,6 @@ public class FlowField : MonoBehaviour
         flowFieldCS.Dispatch(1, threadGroupX, 1, 1); // DIFFUSE
         flowFieldCS.Dispatch(2, threadGroupX, 1, 1); // ADDFORCE
 
-        Graphics.CopyTexture(directionDBT.readTexture, forceField.vectorField);
         magnitudeDBT.Swap();
         directionDBT.Swap();
 
