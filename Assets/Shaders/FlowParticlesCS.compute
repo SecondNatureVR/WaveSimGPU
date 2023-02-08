@@ -1,7 +1,11 @@
 // Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel UpdateParticles
+#pragma kernel RecycleParticles
 
 #include "Assets/Shaders/FlowFieldCommon.hlsl"
+#include "Packages/jp.keijiro.noiseshader/Shader/SimplexNoise3D.hlsl"
+
+#define BOUNDS_MAX BOUNDS_MIN+BOUNDS_SIZE
 
 struct Particle
 {
@@ -9,14 +13,48 @@ struct Particle
     float3 velocity;
 };
 
-RWStructuredBuffer<Particle> Particles;
+RWStructuredBuffer<Particle> _Particles;
+
+bool isOutOfBounds(float3 pos)
+{
+    return pos.x < BOUNDS_MIN.x
+        || pos.y < BOUNDS_MIN.y
+        || pos.z < BOUNDS_MIN.z
+        || pos.x > BOUNDS_MAX.x
+        || pos.y > BOUNDS_MAX.y
+        || pos.z > BOUNDS_MAX.z;
+}
+
+bool isDead(Particle p)
+{
+    return length(p.velocity) < 0.05f || isOutOfBounds(p.position);
+}
 
 [numthreads(64,1,1)]
 void UpdateParticles(uint3 id : SV_DispatchThreadID)
 {
-    float3 pos = Particles[id.x].position;
-    float3 uv = GetTexUVFromWorldPosition(pos); 
-    float3 velocity = FLOW_SAMPLE_DIRECTION(uv) * FLOW_SAMPLE_MAGNITUDE(uv);
+    float3 pos = _Particles[id.x].position;
+    float3 uv = GetTexUVFromWorldPosition(pos).xyz; 
+    float3 dir = FLOW_SAMPLE_DIRECTION(uv);
+    float mag = FLOW_SAMPLE_MAGNITUDE(uv);
+    float3 velocity = _Particles[id.x].velocity + dir * mag * _dTime;
     float3 nextPos = lerp(pos, pos + velocity, _dTime);
-    Particles[id.x].position = nextPos;
+    _Particles[id.x].position = nextPos;
+    _Particles[id.x].velocity = velocity * .995f;
+}
+
+[numthreads(64,1,1)]
+void RecycleParticles(uint3 id : SV_DispatchThreadID)
+{
+    if (isDead(_Particles[id.x]))
+    {
+        float3 pos = _Particles[id.x].position;
+        float3 velocity = _Particles[id.x].velocity;
+        float3 uv = frac(SimplexNoiseGrad(pos + velocity + id.xyz).xyz);
+
+        _Particles[id.x].position = BOUNDS_MIN + uv * BOUNDS_SIZE;
+        float mag = FLOW_SAMPLE_MAGNITUDE(uv);
+        float3 dir = FLOW_SAMPLE_DIRECTION(uv);
+        _Particles[id.x].velocity = mag * dir;
+    }
 }

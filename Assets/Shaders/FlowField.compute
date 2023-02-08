@@ -88,8 +88,10 @@ void averageSurrounding(int3 coord, out float outMagnitude, out float3 outDirect
                 int3 adjCoord = coord + offset;
                 float4 adjUV = GetTexUV(adjCoord);
                 float adjMag = FLOW_SAMPLE_MAGNITUDE(adjUV);
+                float3 adjDir = FLOW_SAMPLE_DIRECTION(adjUV);
+                // if (isOutOfBounds(adjCoord)) continue;
                 outMagnitude += adjMag;
-                outDirection += FLOW_SAMPLE_DIRECTION(adjUV) * adjMag;
+                outDirection += adjDir;
             }
         }
     }
@@ -106,6 +108,6 @@ void Diffuse(uint3 id : SV_DispatchThreadID)
     float3 outDir = 0.0;
     float outMag = 0.0;
     averageSurrounding(coord, outMag, outDir);
-    SET_MAGNITUDE(applyDecay(lerp(mag, outMag * _DiffusionScale, _dTime)));
-    SET_DIRECTION(lerp(dir, outDir * _DiffusionScale, _dTime * _DiffusionScale));
+    SET_MAGNITUDE(applyDecay(lerp(mag, outMag, _DiffusionScale * _dTime)));
+    SET_DIRECTION(lerp(dir, outDir, _DiffusionScale * _dTime));
 }

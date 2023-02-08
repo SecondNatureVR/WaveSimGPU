@@ -21,7 +21,7 @@ SamplerState SmpClampPoint;
 
 #define TSAMP SmpClampPoint
 #define FLOW_SAMPLE(texture3D, uv) texture3D.SampleLevel(TSAMP, uv, 0.0, 0)
-#define FLOW_SAMPLE_DIRECTION(uv) FLOW_SAMPLE(_NormalDirections, uv)
+#define FLOW_SAMPLE_DIRECTION(uv) decodeDirection(FLOW_SAMPLE(_NormalDirections, uv))
 #define FLOW_SAMPLE_MAGNITUDE(uv) FLOW_SAMPLE(_HeightMagnitudes, uv)
 
 #define GET_CURRENT_MAGNITUDE  _HeightMagnitudes[coord]

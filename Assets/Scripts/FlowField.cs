@@ -15,7 +15,7 @@ public class FlowField : MonoBehaviour
     [SerializeField] public Texture3D initMagnitudeTex;
     [SerializeField] public Texture3D initDirectionTex;
 
-    private Bounds bounds;
+    public Bounds bounds;
     private int flowBufferSize;
     private RenderParams renderParams;
 
@@ -140,11 +140,11 @@ public class FlowField : MonoBehaviour
             Vector3 rotDir = new Vector3(Mathf.Cos(pos.x), Mathf.Sin(pos.y), Mathf.Sin(pos.z * 0.25f));
             Vector3 centerDir = pos;
             //float blendT = Mathf.Pow(pos.magnitude / bounds.extents.magnitude, 2);
-            v.direction = Vector3.up;
+            v.direction = pos.normalized;
             // float centerMag = pos.magnitude;
             // float rotMag = (pos.x - bounds.min.x) / bounds.size.x;
             // v.magnitude = pos.x < 0 && pos.y < 0 && pos.z < 0 ? centerMag : 0;
-            v.magnitude = 0f; // Vector3.Distance(pos, Vector3.zero) < 3 ? 0.3f : 0.001f;
+            v.magnitude = .3f;
             vectors[index++] = v;
         }
 
